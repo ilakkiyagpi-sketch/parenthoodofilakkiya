@@ -1,6 +1,6 @@
 // Offline support: cache the app shell, serve it when offline, refresh in background.
-const CACHE = 'parenthood-v1';
-const SHELL = ['./', 'index.html', 'css/styles.css', 'js/app.js', 'js/db.js', 'js/util.js', 'js/catalog.js', 'js/stages.js', 'js/guide.js', 'js/charts.js',
+const CACHE = 'parenthood-v2';
+const SHELL = ['./', 'index.html', 'css/styles.css', 'js/app.js', 'js/db.js', 'js/util.js', 'js/catalog.js', 'js/stages.js', 'js/guide.js', 'js/charts.js', 'js/sync.js',
   'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png'];
 
 self.addEventListener('install', e => {

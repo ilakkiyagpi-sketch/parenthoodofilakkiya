@@ -49,10 +49,30 @@ Then open http://localhost:8000.
 
 It then works offline like a normal app.
 
-## Your data
-- Everything is stored **only on the device** (IndexedDB). Nothing is uploaded.
-- **Settings → Backup (JSON)** regularly, and use **Restore backup** on a new phone. **Export CSV** opens in Excel / Google Sheets.
-- To share between both parents' phones today: export on one, restore on the other. (Live sync would need a small backend; see "Ideas" below.)
+## One-tap timers
+On **Today**, tap **Nap**, **Night sleep**, **Eating**, **Bath**, **Play**, **Walk**, **Learning**, **Story time**, **Breastfeed**, **Crawl time**, **Oil massage**, **Screen** (and later **Homework**, **Sport**) once to start a live timer, and tap the same button again to stop. The duration is logged automatically.
+- Timers keep running even if you close the app or the phone restarts.
+- Starting night sleep stops a running nap (and the other way round). **Woke up** stops any running sleep.
+- After stopping **Eating**, the form opens so you can add what he ate and how much.
+- Every action shows **Undo** and **Add details** for a few seconds.
+
+## Your data & online backup (Google Sheets)
+- Data is stored on the phone (IndexedDB), so the app works fully offline.
+- **Automatic online backup to your own Google Sheet:** after a one-time setup (below), every change is uploaded automatically whenever the phone is online. That happens when the app opens, a few seconds after each change, when the internet comes back, and every 5 minutes. When offline, changes wait in a queue; the ☁️ badge in the header shows `✓` (all backed up), a number (changes waiting) or `⚠` (problem).
+- Deleting an entry in the app only **marks** it deleted in the sheet, so nothing is ever lost there.
+- **New phone:** set up the backup with the same URL and secret. The app offers to restore everything from the sheet first.
+- Both parents can back up to the same sheet. Use **Restore from Google Sheet** to pull the other parent's entries onto your phone.
+- Extra offline copies: **Settings → Backup (JSON)** and **Export CSV**.
+
+### Setting up the Google Sheet backup (5 minutes, free)
+1. Create a new Google Sheet, e.g. "Parenthood Arena Backup".
+2. In the sheet: **Extensions → Apps Script**. Delete the sample code and paste the whole of [`google-sheets-backup/Code.gs`](google-sheets-backup/Code.gs).
+3. Change `SECRET` at the top to your own long phrase, then **Save**.
+4. **Deploy → New deployment →** type **Web app**. *Execute as:* **Me**. *Who has access:* **Anyone**. Click **Deploy** and allow the permissions. (Google may warn that the app is unverified, because it is your own script. Choose *Advanced → Go to project*.)
+5. Copy the **Web app URL** (ends in `/exec`).
+6. In the app: **Settings → Online backup**. Paste the URL and secret, tick **Back up automatically**, then press **Save & test**. Then press **Back up everything now** once to upload past history.
+
+The sheet gets an **Entries** tab with readable columns (date, start, end, duration, activity, details, who logged it), so you can filter or make pivot tables. It also gets an **AppData** tab (settings, milestones, vaccines, foods) and a **Log** tab. If you later edit the script, use **Deploy → Manage deployments → Edit → New version** so the URL stays the same.
 
 ## Files
 ```
@@ -63,7 +83,9 @@ js/catalog.js         every log type and its fields, behaviour lists
 js/stages.js          age stages: targets, timetables, EI, milestones, vaccines
 js/guide.js           parenting library + daily tips
 js/charts.js          small accessible SVG charts
-js/db.js              IndexedDB storage
+js/db.js              IndexedDB storage (+ change queue)
+js/sync.js            automatic Google Sheets backup
+google-sheets-backup/Code.gs   paste into your sheet's Apps Script
 sw.js, manifest       offline + install
 ```
 To change the content (e.g. add a food unit, a routine item or a guide article) edit `catalog.js`, `stages.js` or `guide.js` — no build needed.
@@ -78,7 +100,7 @@ To change the content (e.g. add a food unit, a routine item or a guide article) 
 - Vaccines: [Indian Academy of Pediatrics](https://iapindia.org/pdf/Immunization.pdf) (schedule changes — confirm with your doctor)
 
 ## Ideas for later
-- Cloud sync between parents' phones (e.g. Firebase / Supabase)
+- Automatic two-way sync between parents' phones
 - Reminders / notifications for routine items and vaccines
 - WHO growth-percentile curves
 - Monthly PDF report for paediatrician visits

@@ -25,7 +25,7 @@ export const LOG_TYPES = [
     fields: [
       { k: 'milk', label: 'Milk', kind: 'select', options: ['Formula', 'Expressed breast milk', 'Cow milk', 'Other'] },
       { k: 'amount', label: 'Amount', kind: 'number', unit: 'ml' }] },
-  { key: 'meal', label: 'Meal / food', icon: '🥣', group: 'Food', timed: false, min: 5,
+  { key: 'meal', label: 'Meal / food', icon: '🥣', group: 'Food', timed: true, min: 5,
     fields: [
       { k: 'meal', label: 'Meal', kind: 'select', options: ['Breakfast', 'Mid-morning snack', 'Lunch', 'Evening snack', 'Dinner', 'Extra / other'] },
       { k: 'foods', label: 'What & how much', kind: 'foods' },

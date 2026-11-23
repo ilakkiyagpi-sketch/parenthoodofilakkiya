@@ -6,6 +6,7 @@ import { GUIDE, DAILY_TIPS } from './guide.js';
 import { esc, uid, dateKey, parseKey, addDays, fmtTime, toLocalInput, fromLocalInput, fmtDur, fmtDateLong, fmtDateShort,
   hmToMin, minToHm, ageMonths, ageText, dayOfYear, entryMinutes } from './util.js';
 import { barChart, pairChart, lineChart, wireTooltips } from './charts.js';
+import { startAutoSync, syncNow, getConfig, setConfig, getState, pendingCount, testConnection, restoreFromSheet } from './sync.js';
 
 // ------------------------------------------------------------------ state
 const S = {
@@ -33,9 +34,33 @@ async function boot() {
   wireTooltips(document.body);
   setInterval(tickTimers, 1000);
   if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
+  startAutoSync({ buildRow, status: renderSyncBadge });
   if (!S.settings?.dob) return renderOnboarding();
   await refreshAge();
   route();
+}
+
+// Row sent to the Google Sheet: readable columns + the full entry for restoring
+function buildRow(e) {
+  const t = typeInfo(e.type);
+  const stamp = ms => ms ? `${dateKey(ms)} ${fmtTime(ms)}` : '';
+  return { id: e.id, date: e.date, start: stamp(e.start), end: t.timed ? stamp(e.end) : '', duration: e.end && t.timed ? Math.round(entryMinutes(e)) : '',
+    type: e.type, activity: t.label, details: entrySummary(e), note: e.note || '', by: e.by || '', updatedAt: e.updatedAt, entry: e };
+}
+
+async function renderSyncBadge(state) {
+  const el = $('#syncBadge');
+  if (!el) return;
+  const cfg = await getConfig();
+  if (!cfg.enabled) { el.textContent = '☁️ off'; el.className = 'sync-badge off'; el.title = 'Online backup is off — tap to set up'; return; }
+  const n = await pendingCount(), st = await getState();
+  let txt, cls, title;
+  if (state === 'syncing') [txt, cls, title] = ['☁️ ⟳', 'busy', 'Backing up…'];
+  else if (!navigator.onLine) [txt, cls, title] = [`☁️ ${n} waiting`, 'warn', 'Offline — will back up when online'];
+  else if (st.lastError && n) [txt, cls, title] = ['☁️ ⚠', 'err', 'Backup problem: ' + st.lastError];
+  else if (n) [txt, cls, title] = [`☁️ ${n}`, 'busy', `${n} changes waiting to back up`];
+  else [txt, cls, title] = ['☁️ ✓', 'ok', st.lastSync ? `Backed up ${new Date(st.lastSync).toLocaleString()}` : 'Backed up'];
+  el.textContent = txt; el.className = 'sync-badge ' + cls; el.title = title; el.setAttribute('aria-label', title);
 }
 
 async function refreshAge() {
@@ -60,7 +85,9 @@ function renderHeader() {
   const s = S.settings;
   $('#hdr').innerHTML = `<div class="who"><div class="avatar">${esc((s.name || '?')[0])}</div>
     <div><div class="name">${esc(s.name)}</div><div class="sub">${esc(ageText(s.dob))} · ${S.stage.emoji} ${esc(S.stage.name)}</div></div></div>
-    <button class="icon-btn" data-act="view" data-view="settings" aria-label="Settings">⚙️</button>`;
+    <div class="row"><button id="syncBadge" class="sync-badge" data-act="view" data-view="settings"></button>
+    <button class="icon-btn" data-act="view" data-view="settings" aria-label="Settings">⚙️</button></div>`;
+  renderSyncBadge();
 }
 
 // ------------------------------------------------------------------ data helpers
@@ -108,7 +135,7 @@ function entrySummary(e) {
   }
   if (e.type === 'ei') return d.text || '';
   const parts = [];
-  if (e.start && e.end && t.timed) parts.push(fmtDur(entryMinutes(e)));
+  if (e.start && e.end && t.timed && entryMinutes(e) >= 1) parts.push(fmtDur(entryMinutes(e)));
   if (e.start && !e.end && t.timed) parts.push('⏱ running');
   for (const f of (t.fields || [])) {
     const v = d[f.k];
@@ -137,6 +164,7 @@ async function renderToday() {
   const routine = await getRoutine();
   const next = routine.find(r => r.min >= nowMin - 10) || routine[0];
 
+  const toggles = TOGGLES.filter(([k, , , min = 0, max = 9999]) => S.months >= min && S.months < max);
   const tiles = [
     tile('🌙', 'Sleep (night + naps)', fmtDur(sm.sleepMin), `${tg.sleep[0]}–${tg.sleep[1]} h`, rangeStatus(sm.sleepMin / 60, tg.sleep, true), `night ${fmtDur(sm.nightMin)} · naps ${sm.napCount} (${fmtDur(sm.napMin)})`),
     tg.naps[1] > 0 ? tile('😴', 'Naps', sm.napCount, `${tg.naps[0]}–${tg.naps[1]}`, rangeStatus(sm.napCount, tg.naps, true)) : '',
@@ -152,15 +180,16 @@ async function renderToday() {
 
   main().innerHTML = `
     ${banner}
-    ${running.map(e => `<div class="card running"><div><b>${typeInfo(e.type).icon} ${esc(typeInfo(e.type).label)}</b> since ${fmtTime(e.start)}
+    <h2 class="qh">Tap to start · tap again to stop</h2>
+    <section class="quick">${toggles.map(([k, icon, label]) => toggleBtn(k, icon, label, running.find(e => e.type === k))).join('')}</section>
+    ${running.filter(e => !toggles.some(t => t[0] === e.type)).map(e => `<div class="card running"><div><b>${typeInfo(e.type).icon} ${esc(typeInfo(e.type).label)}</b> since ${fmtTime(e.start)}
       <div class="big" data-since="${e.start}">${fmtDur(entryMinutes(e))}</div></div>
       <div class="row"><button class="btn primary" data-act="stop" data-id="${e.id}">Stop</button><button class="btn" data-act="edit" data-id="${e.id}">Edit</button></div></div>`).join('')}
-    <section class="quick">
-      ${quickBtn('pee', '💛', 'Pee +1')}${quickBtn('poop', '💩', 'Poop')}${quickBtn('meal', '🥣', 'Food')}
-      ${S.months < 30 ? quickBtn('breastfeed', '🤱', 'Feed', true) : quickBtn('water', '💧', 'Water')}
-      ${S.months < 72 ? quickBtn('nap', '😴', 'Nap', true) : quickBtn('homework', '✏️', 'Homework', true)}
-      ${quickBtn('sleep', '🌙', 'Sleep', true)}${quickBtn('wake', '🌅', 'Woke up')}${quickBtn('study', '📚', 'Learning', true)}
-      ${quickBtn('play', '🧸', 'Play', true)}${quickBtn('walk', '🌳', 'Walk', true)}${quickBtn('bath', '🛁', 'Bath')}
+    <h2 class="qh">Tap to count</h2>
+    <section class="quick counts">
+      ${quickBtn('pee', '💛', `Pee +1 <small>(${sm.pee} today)</small>`)}${quickBtn('poop', '💩', `Poop <small>(${sm.poop})</small>`)}${quickBtn('wake', '🌅', 'Woke up')}
+      ${S.months < 48 ? quickBtn('bottle', '🍼', 'Milk bottle') : ''}${S.months >= 6 ? quickBtn('water', '💧', 'Water') : ''}
+      ${quickBtn('mood', '🙂', 'Mood')}${quickBtn('medicine', '💊', 'Medicine')}
       <button class="qb" data-act="behaviour" data-kind="pos"><span>💗</span>Kind act</button>
     </section>
     <section class="card next">
@@ -191,8 +220,20 @@ function rangeStatus(v, [lo, hi], partialDay = false) {
   if (v < lo) return partialDay && new Date().getHours() < 20 ? null : 'low';
   return 'ok';
 }
-function quickBtn(type, icon, label, timed = false) {
-  return `<button class="qb" data-act="${timed ? 'quickTimed' : 'quick'}" data-type="${type}"><span>${icon}</span>${esc(label)}</button>`;
+function quickBtn(type, icon, labelHtml) {
+  return `<button class="qb" data-act="quick" data-type="${type}"><span>${icon}</span>${labelHtml}</button>`;
+}
+// One-tap timers: [type, icon, label, minMonths, maxMonths]
+const TOGGLES = [
+  ['sleep', '🌙', 'Night sleep'], ['nap', '😴', 'Nap', 0, 72], ['breastfeed', '🤱', 'Breastfeed', 0, 30], ['meal', '🥣', 'Eating'],
+  ['bath', '🛁', 'Bath'], ['play', '🧸', 'Play'], ['walk', '🌳', 'Walk / outdoor'], ['study', '📚', 'Learning'],
+  ['reading', '📖', 'Story time'], ['floor', '🐛', 'Crawl time', 0, 15], ['massage', '🫗', 'Oil massage', 0, 36],
+  ['homework', '✏️', 'Homework', 60], ['exercise', '⚽', 'Sport', 42], ['screen', '📱', 'Screen'],
+];
+function toggleBtn(type, icon, label, run) {
+  return run
+    ? `<button class="qb on" data-act="toggle" data-type="${type}" aria-pressed="true"><span>${icon}</span>${esc(label)}<b class="elapsed" data-since="${run.start}">${fmtDur(entryMinutes(run))}</b><small>since ${fmtTime(run.start)} · tap to stop</small></button>`
+    : `<button class="qb" data-act="toggle" data-type="${type}" aria-pressed="false"><span>${icon}</span>${esc(label)}<small>tap to start</small></button>`;
 }
 function pickDaily(arr, salt) {
   if (!arr.length) return '';
@@ -630,8 +671,28 @@ async function renderGuide() {
 async function renderSettings() {
   const s = S.settings;
   const count = (await db.all()).length;
+  const cfg = await getConfig(), st = await getState(), pend = await pendingCount();
   main().innerHTML = `
     <h2>Settings</h2>
+    <form id="syncForm" class="card">
+      <div class="label">☁️ Online backup — your own Google Sheet</div>
+      <p class="small">Every entry is copied to a Google Sheet automatically whenever the phone is online (on opening the app, a few seconds after each change, and every 5 minutes). When offline, changes wait safely and upload later. Deleted entries are only <i>marked</i> deleted in the sheet, never removed.</p>
+      <p class="small"><b>Status:</b> ${cfg.enabled ? (pend ? `${pend} change(s) waiting` : 'all backed up') : 'off'}${st.lastSync ? ` · last backup ${esc(new Date(st.lastSync).toLocaleString())}` : ''}${st.lastError ? `<br><span class="err-text">⚠ ${esc(st.lastError)}</span>` : ''}</p>
+      <label>Web app URL<input name="url" type="url" placeholder="https://script.google.com/macros/s/…/exec" value="${esc(cfg.url)}"></label>
+      <label>Secret phrase (same as in the script)<input name="token" type="password" autocomplete="off" value="${esc(cfg.token)}"></label>
+      <label class="check"><input type="checkbox" name="enabled" ${cfg.enabled ? 'checked' : ''}> Back up automatically</label>
+      <div class="row wrap"><button class="btn primary">Save & test</button>
+        <button type="button" class="btn" data-act="syncAll" ${cfg.enabled ? '' : 'disabled'}>⬆️ Back up everything now</button>
+        <button type="button" class="btn" data-act="syncRestore" ${cfg.enabled ? '' : 'disabled'}>⬇️ Restore from Google Sheet</button></div>
+      <details><summary class="small">How to set it up (5 minutes, free)</summary><ol class="small">
+        <li>Create a new Google Sheet, e.g. "Parenthood Arena Backup".</li>
+        <li>In the sheet: <b>Extensions → Apps Script</b>. Delete the sample code and paste the code from <code>google-sheets-backup/Code.gs</code> in this project.</li>
+        <li>In that code, change <code>SECRET</code> to your own long phrase and click Save.</li>
+        <li><b>Deploy → New deployment → Web app</b>. Execute as: <b>Me</b>. Who has access: <b>Anyone</b>. Deploy and allow permissions.</li>
+        <li>Copy the Web app URL (ends with <code>/exec</code>), paste it above with the same secret, tick "Back up automatically" and press <b>Save & test</b>.</li>
+        <li>Press <b>Back up everything now</b> once to upload your existing history.</li></ol>
+        <p class="small muted">Only someone who knows both the URL and the secret can write to your sheet. Keep them private.</p></details>
+    </form>
     <form id="settingsForm" class="card">
       <label>Child's name<input name="name" value="${esc(s.name)}" required></label>
       <label>Date of birth<input type="date" name="dob" value="${esc(s.dob)}" max="${dateKey()}" required></label>
@@ -642,13 +703,36 @@ async function renderSettings() {
       <label>Theme<select name="theme">${['auto', 'light', 'dark'].map(t => `<option ${t === s.theme ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
       <button class="btn primary">Save settings</button>
     </form>
-    <section class="card"><div class="label">Your data (${count} entries, stored only on this device)</div>
-      <p class="small">Back up regularly — especially before changing phones. Import a backup on another phone to continue there.</p>
+    <section class="card"><div class="label">Your data (${count} entries on this device)</div>
+      <p class="small">Offline file backups as well — useful as a second copy.</p>
       <div class="row wrap"><button class="btn" data-act="export">⬇️ Backup (JSON)</button><button class="btn" data-act="csv">⬇️ Export CSV</button>
       <label class="btn">⬆️ Restore backup<input type="file" id="importFile" accept="application/json" hidden></label></div>
       <div class="row wrap"><button class="btn" data-act="demo">Load 7 days of sample data</button><button class="btn danger" data-act="wipe">Erase everything</button></div></section>
-    <section class="card small muted"><b>About.</b> Parenthood Arena is a personal, offline-first app. Nothing is sent to any server.
+    <section class="card small muted"><b>About.</b> Parenthood Arena is a personal, offline-first app. Data only leaves the phone if you turn on the online backup, and then it goes only to your own Google Sheet.
       Content is general guidance based on WHO, AAP/AASM, CDC, IAP, Gottman Institute and Harvard Center on the Developing Child; always follow your paediatrician.</section>`;
+  $('#syncForm').addEventListener('submit', async ev => {
+    ev.preventDefault();
+    const fd = new FormData(ev.target);
+    const next = { url: String(fd.get('url')).trim(), token: String(fd.get('token')), enabled: fd.get('enabled') === 'on' };
+    if (next.enabled && !/^https:\/\/script\.google(usercontent)?\.com\//.test(next.url)) return alert('Please paste the Apps Script Web app URL (starts with https://script.google.com/).');
+    await setConfig(next);
+    if (!next.enabled) { toast('Online backup turned off'); return route(); }
+    toast('Testing connection…');
+    try {
+      const r = await testConnection(next);
+      const st = await getState();
+      // New phone / reinstalled app: bring the existing history down BEFORE uploading anything
+      if (r.count > 0 && !st.lastSync && confirm(`Your sheet "${r.sheet}" already has ${r.count} entries. Restore them to this phone first? (Recommended on a new phone)`)) {
+        const n = await restoreFromSheet();
+        S.settings = await db.getKV('settings'); applyTheme(); await refreshAge();
+        toast(`✓ Restored ${n} entries`);
+      }
+      toast(`✓ Connected to "${r.sheet}". Backing up…`);
+      await syncNow({ silent: false });
+      toast('✓ Backup complete');
+    } catch (err) { alert('Could not connect: ' + err.message); }
+    route();
+  });
   $('#settingsForm').addEventListener('submit', async ev => {
     ev.preventDefault();
     const fd = new FormData(ev.target);
@@ -749,10 +833,44 @@ async function loadDemo() {
   toast('Sample data added'); route();
 }
 
-function toast(msg) {
+// Toast with optional action buttons, e.g. [['Undo', fn], ['Add details', fn]]
+function toast(msg, actions = []) {
   const t = $('#toast');
-  t.textContent = msg; t.hidden = false;
-  clearTimeout(toast._t); toast._t = setTimeout(() => { t.hidden = true; }, 2500);
+  toast._actions = actions.map(x => x[1]);
+  t.innerHTML = `<span>${esc(msg)}</span>${actions.map((x, i) => `<button class="toast-btn" data-act="toastAct" data-i="${i}">${esc(x[0])}</button>`).join('')}`;
+  t.hidden = false;
+  clearTimeout(toast._t); toast._t = setTimeout(() => { t.hidden = true; }, actions.length ? 6000 : 2500);
+}
+
+// One-tap timer: first tap starts, second tap stops and logs the duration.
+const SLEEPY = ['sleep', 'nap'];
+async function toggleTimer(type) {
+  const t = typeInfo(type);
+  const running = (await db.byType(type)).find(e => !e.end);
+  if (running) {
+    running.end = Date.now();
+    await db.put(running);
+    const mins = entryMinutes(running);
+    route();
+    if (type === 'meal') { toast(`🥣 Eating time: ${fmtDur(mins)} — add what he ate`); return openForm('meal', running, { focusFoods: true }); }
+    return toast(`${t.icon} ${t.label}: ${fmtDur(mins)} (${fmtTime(running.start)}–${fmtTime(running.end)})`, [
+      ['Undo', async () => { running.end = null; await db.put(running); route(); }],
+      ['Add details', () => openForm(type, running)]]);
+  }
+  // Only one kind of sleep at a time: starting night sleep ends a nap and vice versa
+  let stopped = null;
+  if (SLEEPY.includes(type)) {
+    for (const k of SLEEPY) {
+      const r = (await db.byType(k)).find(e => !e.end);
+      if (r) { r.end = Date.now(); await db.put(r); stopped = r; }
+    }
+  }
+  const now = Date.now();
+  const e = { id: uid(), type, start: now, end: null, date: dateKey(now), data: {}, note: '', by: S.settings.me, createdAt: now };
+  await db.put(e);
+  route();
+  toast(`${t.icon} ${t.label} started at ${fmtTime(now)}${stopped ? ` · ${typeInfo(stopped.type).label} ended` : ''}`, [
+    ['Undo', async () => { await db.del(e.id); if (stopped) { stopped.end = null; await db.put(stopped); } route(); }]]);
 }
 
 // ------------------------------------------------------------------ events
@@ -783,22 +901,23 @@ async function onClick(ev) {
         const prev = (await db.byType(type)).sort((x, y) => y.start - x.start)[0];
         const data = type === 'pee' ? { how: prev?.data?.how || (S.months < 30 ? 'Diaper / nappy' : 'Toilet') } : {};
         await db.put({ id: uid(), type, start: Date.now(), end: null, date: dateKey(), data, note: '', by: S.settings.me, createdAt: Date.now() });
-        toast(type === 'pee' ? '💛 Pee logged (+1)' : '🌅 Good morning!');
-        if (type === 'wake') { // auto-stop a running night sleep
-          const run = (await db.byType('sleep')).find(e => !e.end);
-          if (run) { run.end = Date.now(); await db.put(run); }
+        const saved = (await db.byType(type)).sort((x, y) => y.createdAt - x.createdAt)[0];
+        let stopped = null;
+        if (type === 'wake') { // waking up ends a running night sleep / nap
+          for (const k of ['sleep', 'nap']) {
+            const run = (await db.byType(k)).find(e => !e.end);
+            if (run) { run.end = Date.now(); await db.put(run); stopped = run; }
+          }
         }
+        toast(type === 'pee' ? '💛 Pee logged (+1)' : stopped ? `🌅 Good morning! ${typeInfo(stopped.type).label}: ${fmtDur(entryMinutes(stopped))}` : '🌅 Good morning!',
+          [['Undo', async () => { await db.del(saved.id); if (stopped) { stopped.end = null; await db.put(stopped); } route(); }],
+           ['Details', () => openForm(type, saved)]]);
         route();
       } else openForm(type);
       break;
     }
-    case 'quickTimed': {
-      const type = el.dataset.type;
-      const running = (await db.byType(type)).find(e => !e.end);
-      if (running) { running.end = Date.now(); await db.put(running); toast(`${typeInfo(type).label}: ${fmtDur(entryMinutes(running))}`); route(); }
-      else openForm(type);
-      break;
-    }
+    case 'toggle': await toggleTimer(el.dataset.type); break;
+    case 'toastAct': { const f = toast._actions?.[Number(el.dataset.i)]; $('#toast').hidden = true; if (f) await f(); break; }
     case 'eidone': {
       await db.put({ id: uid(), type: 'ei', start: Date.now(), end: null, date: dateKey(), data: { text: el.dataset.text }, note: '', by: S.settings.me, createdAt: Date.now() });
       toast('💛 Lovely! Logged.'); route(); break;
@@ -818,6 +937,18 @@ async function onClick(ev) {
     }
     case 'resetRoutine': if (confirm('Go back to the recommended timetable?')) { await db.setKV(`routine:${S.stage.id}`, null); route(); } break;
     case 'export': exportJSON(); break;
+    case 'syncAll': {
+      const n = await db.markAllDirty();
+      toast(`Uploading ${n} entries…`);
+      try { await syncNow({ silent: false }); toast('✓ Everything is backed up'); } catch (err) { alert('Backup failed: ' + err.message + '\nIt will retry automatically.'); }
+      route(); break;
+    }
+    case 'syncRestore': {
+      if (!confirm('Download all entries from your Google Sheet into this phone? Entries already here are kept; same entries are updated.')) break;
+      try { const n = await restoreFromSheet(); S.settings = await db.getKV('settings'); applyTheme(); await refreshAge(); toast(`✓ Restored ${n} entries`); }
+      catch (err) { alert('Restore failed: ' + err.message); }
+      route(); break;
+    }
     case 'csv': exportCSV(); break;
     case 'demo': loadDemo(); break;
     case 'wipe':
