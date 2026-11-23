@@ -3,13 +3,19 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Parenthood Arena</title>
-  <meta name="description" content="Personal child tracker and parenting guide that adapts from baby to teen.">
-  <meta name="theme-color" content="#2a78d6">
+  <title>Happy Parenthood</title>
+  <meta name="description" content="Your child's day, health and growth in one place, with guidance that grows with them.">
+  <meta name="theme-color" content="#7c6ff0">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Happy Parenthood">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <meta name="apple-mobile-web-app-capable" content="yes">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
@@ -17,12 +23,11 @@
   <main id="main" class="main"><p class="empty">Loading…</p></main>
   <button class="fab" data-act="openPicker" aria-label="Add a log entry">＋</button>
   <nav class="tabs" aria-label="Sections">
-    <button data-act="view" data-view="today"><span>🏠</span>Today</button>
+    <button data-act="view" data-view="home"><span>🏠</span>Home</button>
     <button data-act="view" data-view="diary"><span>📒</span>Diary</button>
-    <button data-act="view" data-view="routine"><span>🕒</span>Routine</button>
+    <button data-act="view" data-view="health"><span>🩺</span>Health</button>
     <button data-act="view" data-view="heart"><span>💛</span>Heart</button>
-    <button data-act="view" data-view="grow"><span>🌱</span>Grow</button>
-    <button data-act="view" data-view="guide"><span>📖</span>Guide</button>
+    <button data-act="view" data-view="more"><span>☰</span>More</button>
   </nav>
   <div id="sheet" class="sheet" hidden></div>
   <div id="toast" class="toast" role="status" hidden></div>

@@ -1,7 +1,7 @@
 // Tiny IndexedDB wrapper. All data lives on this device; every change is also
 // recorded in a "dirty" list so the online backup (sync.js) knows what to upload.
 const DB_NAME = 'parenthood';
-const VERSION = 1;
+const VERSION = 2;
 // kv keys that are local-only and never uploaded
 export const LOCAL_KV = new Set(['dirty', 'kvDirty', 'sync', 'syncState', 'lastStage']);
 let dbp;
@@ -18,6 +18,8 @@ function open() {
         s.createIndex('type', 'type');
       }
       if (!db.objectStoreNames.contains('kv')) db.createObjectStore('kv');
+      // v2: photos (compressed JPEG data URLs + Google Drive link once backed up)
+      if (!db.objectStoreNames.contains('photos')) db.createObjectStore('photos', { keyPath: 'id' });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -79,6 +81,7 @@ export const db = {
   async clearAll() {
     await tx('entries', 'readwrite', s => s.clear());
     await tx('kv', 'readwrite', s => s.clear());
+    await tx('photos', 'readwrite', s => s.clear());
   },
   // markAsChanged=false when the data came FROM the online backup (no need to re-upload)
   async bulkPut(entries, markAsChanged = true) {
@@ -87,6 +90,14 @@ export const db = {
       if (markAsChanged) await markDirty(s.kv, entries.map(e => e.id), 'put');
     });
     if (markAsChanged) changed();
+  },
+  // ---- photos
+  async putPhoto(p) { await tx('photos', 'readwrite', s => s.put(p)); changed(); return p; },
+  async getPhoto(id) { return tx('photos', 'readonly', s => reqP(s.get(id))); },
+  async allPhotos() { return tx('photos', 'readonly', s => reqP(s.getAll())); },
+  async photosToUpload() { return (await this.allPhotos()).filter(p => p.data && !p.driveId); },
+  async updatePhoto(id, patch) {
+    await tx('photos', 'readwrite', async s => { const p = await reqP(s.get(id)); if (p) s.put({ ...p, ...patch }); });
   },
   async markAllDirty() {
     const all = await this.all();
