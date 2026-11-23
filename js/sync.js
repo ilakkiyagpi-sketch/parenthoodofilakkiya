@@ -28,7 +28,7 @@ async function call(cfg, payload) {
     redirect: 'follow',
   });
   if (!res.ok) throw new Error(`Server replied ${res.status}`);
-  const out = await res.json().catch(() => { throw new Error('Unexpected reply — check the web app URL and that access is "Anyone"'); });
+  const out = await res.json().catch(() => { throw new Error('Google returned a page instead of the backup reply. Check: (1) the URL ends in /exec, (2) Deploy → Manage deployments → Edit: "Who has access" = Anyone, then Deploy a New version, (3) open the URL in an Incognito window — it should say "backup is running"'); });
   if (!out.ok) throw new Error(out.error || 'Backup failed');
   return out;
 }

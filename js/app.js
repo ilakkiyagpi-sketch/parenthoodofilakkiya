@@ -713,8 +713,15 @@ async function renderSettings() {
   $('#syncForm').addEventListener('submit', async ev => {
     ev.preventDefault();
     const fd = new FormData(ev.target);
-    const next = { url: String(fd.get('url')).trim(), token: String(fd.get('token')), enabled: fd.get('enabled') === 'on' };
-    if (next.enabled && !/^https:\/\/script\.google(usercontent)?\.com\//.test(next.url)) return alert('Please paste the Apps Script Web app URL (starts with https://script.google.com/).');
+    // Remove the "/u/0/" account part that breaks web apps when several Google accounts are signed in
+    const url = String(fd.get('url')).trim().replace(/\/macros\/u\/\d+\/s\//, '/macros/s/').replace(/[?#].*$/, '');
+    const next = { url, token: String(fd.get('token')).trim(), enabled: fd.get('enabled') === 'on' };
+    if (next.enabled) {
+      if (/docs\.google\.com\/spreadsheets/.test(url)) return alert('This is the Google Sheet link. Paste the Apps Script Web app URL (ends in /exec) instead.');
+      if (/\/edit$|\/home\/projects\//.test(url)) return alert('This is the script EDITOR link. In Apps Script use Deploy → Manage deployments and copy the "Web app" URL ending in /exec.');
+      if (/\/dev$/.test(url)) return alert('This is the test (/dev) link. Use the deployed Web app URL that ends in /exec.');
+      if (!/^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec$/.test(url)) return alert('Please paste the Apps Script Web app URL. It looks like https://script.google.com/macros/s/…/exec');
+    }
     await setConfig(next);
     if (!next.enabled) { toast('Online backup turned off'); return route(); }
     toast('Testing connection…');
