@@ -4,7 +4,11 @@
 //   seconds after any change, when the connection comes back, and every 5 minutes.
 // - Nothing is lost if offline: the queue simply waits.
 // - The sheet can be used to restore everything on a new phone.
-import { db, LOCAL_KV } from './db.js';
+import { mainDb, dbFor, childDbName, LOCAL_KV } from './db.js';
+
+// Backup settings live in the first child's database; every child's data is uploaded.
+const db = mainDb;
+export async function childrenList() { return db.getKV('children', [{ id: 'main', name: '' }]); }
 
 const BATCH = 400;
 let rowBuilder = e => ({});
@@ -15,10 +19,14 @@ export async function setConfig(c) { await db.setKV('sync', c); }
 export async function getState() { return db.getKV('syncState', { lastSync: null, lastError: null }); }
 
 export async function pendingCount() {
-  const dirty = await db.getKV('dirty', {});
   const st = await getState();
-  const photos = st.photosUnsupported ? 0 : (await db.photosToUpload()).length;
-  return Object.keys(dirty).length + photos + ((await db.getKV('kvDirty', 0)) ? 1 : 0);
+  let n = 0;
+  for (const c of await childrenList()) {
+    const cdb = dbFor(childDbName(c.id));
+    n += Object.keys(await cdb.getKV('dirty', {})).length + ((await cdb.getKV('kvDirty', 0)) ? 1 : 0);
+    if (!st.photosUnsupported) n += (await cdb.photosToUpload()).length;
+  }
+  return n;
 }
 
 async function call(cfg, payload) {
@@ -48,43 +56,48 @@ export async function syncNow({ silent = true } = {}) {
   if (running) return { skipped: 'busy' };
   running = true; onStatus('syncing');
   try {
-    // 1) photos first (to a Google Drive folder), so entry rows can include their links
     let st = await getState();
-    if (!st.photosUnsupported) {
-      for (const p of await db.photosToUpload()) {
-        try {
-          const r = await call(cfg, { action: 'photo', id: p.id, mime: 'image/jpeg', data: p.data.split(',')[1] });
-          await db.updatePhoto(p.id, { driveId: r.fileId, driveUrl: r.url });
-        } catch (err) {
-          if (/Unknown action/i.test(err.message)) { await db.setKV('syncState', { ...st, photosUnsupported: true }); break; }
-          throw err;
+    let sent = 0;
+    for (const child of await childrenList()) {
+      const cdb = dbFor(childDbName(child.id));
+      const prefix = child.id === 'main' ? '' : `${child.id}::`;
+      // 1) photos first (to a Google Drive folder), so entry rows can include their links
+      if (!st.photosUnsupported) {
+        for (const p of await cdb.photosToUpload()) {
+          try {
+            const r = await call(cfg, { action: 'photo', id: p.id, mime: 'image/jpeg', data: p.data.split(',')[1] });
+            await cdb.updatePhoto(p.id, { driveId: r.fileId, driveUrl: r.url });
+          } catch (err) {
+            if (/Unknown action/i.test(err.message)) { st = { ...st, photosUnsupported: true }; await db.setKV('syncState', st); break; }
+            throw err;
+          }
         }
       }
-    }
-    // 2) entries
-    const dirty = await db.getKV('dirty', {});
-    const ids = Object.keys(dirty);
-    let sent = 0;
-    for (let i = 0; i < ids.length; i += BATCH) {
-      const chunk = ids.slice(i, i + BATCH);
-      const rows = [], deletes = [];
-      for (const id of chunk) {
-        if (dirty[id].op === 'del') { deletes.push(id); continue; }
-        const e = await db.get(id);
-        if (e) rows.push(await rowBuilder(e)); else deletes.push(id);
+      // 2) entries
+      const dirty = await cdb.getKV('dirty', {});
+      const ids = Object.keys(dirty);
+      for (let i = 0; i < ids.length; i += BATCH) {
+        const chunk = ids.slice(i, i + BATCH);
+        const rows = [], deletes = [];
+        for (const id of chunk) {
+          if (dirty[id].op === 'del') { deletes.push(id); continue; }
+          const e = await cdb.get(id);
+          if (e) rows.push(await rowBuilder({ ...e, child: child.id }, child, cdb)); else deletes.push(id);
+        }
+        await call(cfg, { action: 'save', rows, deletes });
+        sent += chunk.length;
+        // remove only the ids that did not change again while uploading
+        const now = await cdb.getKV('dirty', {});
+        chunk.forEach(id => { if (now[id] && now[id].at === dirty[id].at) delete now[id]; });
+        await cdb.setKV('dirty', now);
       }
-      await call(cfg, { action: 'save', rows, deletes });
-      sent += chunk.length;
-      // remove only the ids that did not change again while uploading
-      const now = await db.getKV('dirty', {});
-      chunk.forEach(id => { if (now[id] && now[id].at === dirty[id].at) delete now[id]; });
-      await db.setKV('dirty', now);
-    }
-    const kvDirty = await db.getKV('kvDirty', 0);
-    if (kvDirty) {
-      const kv = Object.fromEntries(Object.entries(await db.allKV()).filter(([k]) => !LOCAL_KV.has(k)));
-      await call(cfg, { action: 'saveKV', kv });
-      if ((await db.getKV('kvDirty', 0)) === kvDirty) await db.setKV('kvDirty', 0);
+      // 3) settings, milestones, foods… (keys prefixed for the 2nd, 3rd… child)
+      const kvDirty = await cdb.getKV('kvDirty', 0);
+      if (kvDirty) {
+        const kv = Object.fromEntries(Object.entries(await cdb.allKV()).filter(([k]) => !LOCAL_KV.has(k)).map(([k, v]) => [prefix + k, v]));
+        await call(cfg, { action: 'saveKV', kv });
+        if ((await cdb.getKV('kvDirty', 0)) === kvDirty) await cdb.setKV('kvDirty', 0);
+      }
     }
     st = await getState();
     await db.setKV('syncState', { ...st, lastSync: Date.now(), lastError: null, lastSent: sent });
@@ -109,14 +122,32 @@ export async function testConnection(cfg) {
 export async function restoreFromSheet() {
   const cfg = await getConfig();
   const out = await call(cfg, { action: 'export' });
+  const kvAll = out.kv || {};
+  // children list first (stored with the first child's data)
+  const children = kvAll.children || [{ id: 'main', name: '' }];
+  if (!children.some(c => c.id === 'main')) children.unshift({ id: 'main', name: '' });
+  await db.setKV('children', children);
   const entries = (out.entries || []).filter(e => e && e.id);
-  await db.bulkPut(entries, false);
-  for (const [k, v] of Object.entries(out.kv || {})) if (!LOCAL_KV.has(k)) await db.setKV(k, v);
-  // photo links (the pictures themselves stay in Google Drive)
-  for (const ph of out.photos || []) {
-    if (!(await db.getPhoto(ph.id))) await db.putPhoto({ id: ph.id, driveId: ph.fileId, driveUrl: ph.url, createdAt: Date.now() });
+  const photoMeta = Object.fromEntries((out.photos || []).map(p => [p.id, p]));
+  for (const c of children) {
+    const cdb = dbFor(childDbName(c.id));
+    const mine = entries.filter(e => (e.child || 'main') === c.id);
+    await cdb.bulkPut(mine, false);
+    const prefix = c.id === 'main' ? '' : `${c.id}::`;
+    for (const [k, v] of Object.entries(kvAll)) {
+      if (k === 'children') continue;
+      if (prefix ? k.startsWith(prefix) : !k.includes('::')) {
+        const key = k.slice(prefix.length);
+        if (!LOCAL_KV.has(key)) await cdb.setKV(key, v);
+      }
+    }
+    // photo links (the pictures themselves stay in Google Drive)
+    for (const e of mine) for (const pid of e.data?.photos || []) {
+      const ph = photoMeta[pid];
+      if (ph && !(await cdb.getPhoto(pid))) await cdb.putPhoto({ id: pid, driveId: ph.fileId, driveUrl: ph.url, createdAt: Date.now() });
+    }
+    await cdb.setKV('kvDirty', 0);
   }
-  await db.setKV('kvDirty', 0);
   return entries.length;
 }
 

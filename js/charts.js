@@ -112,3 +112,27 @@ export function wireTooltips(root) {
   });
   root.addEventListener('pointerleave', () => root.querySelectorAll('.tooltip').forEach(t => { t.hidden = true; }));
 }
+
+// WHO growth chart: shaded healthy band (−2 to +2 SD), lighter outer band (−3 to +3 SD),
+// median line, and the child's own measurements as a line with dots.
+export function growthChart({ title, unit, xs, lo3, lo2, med, hi2, hi3, pts, xLabel }) {
+  const W2 = 340, H2 = 190, P = { l: 34, r: 10, t: 10, b: 24 };
+  const all = [...lo3, ...hi3, ...pts.map(p => p.v)].filter(v => v != null);
+  const ymin = Math.floor(Math.min(...all)), ymax = Math.ceil(Math.max(...all));
+  const x0 = xs[0], x1 = xs[xs.length - 1];
+  const iw = W2 - P.l - P.r, ih = H2 - P.t - P.b;
+  const X = v => P.l + ((v - x0) / (x1 - x0 || 1)) * iw;
+  const Y = v => P.t + ih - ((v - ymin) / (ymax - ymin || 1)) * ih;
+  const area = (a, b) => `M${xs.map((x, i) => `${X(x).toFixed(1)},${Y(a[i]).toFixed(1)}`).join(' L')} L${xs.map((x, i) => `${X(x).toFixed(1)},${Y(b[i]).toFixed(1)}`).reverse().join(' L')} Z`;
+  const line = a => `M${xs.map((x, i) => `${X(x).toFixed(1)},${Y(a[i]).toFixed(1)}`).join(' L')}`;
+  const ticksY = [ymin, (ymin + ymax) / 2, ymax].map(t => `<line class="grid" x1="${P.l}" x2="${W2 - P.r}" y1="${Y(t)}" y2="${Y(t)}"/><text class="tick" x="${P.l - 4}" y="${Y(t) + 3}" text-anchor="end">${Math.round(t * 10) / 10}</text>`).join('');
+  const nX = 5, ticksX = Array.from({ length: nX }, (_, i) => x0 + (x1 - x0) * i / (nX - 1)).map(t => `<text class="tick" x="${X(t)}" y="${H2 - 8}" text-anchor="middle">${esc(xLabel(t))}</text>`).join('');
+  const sorted = [...pts].sort((a, b) => a.x - b.x);
+  const child = sorted.length > 1 ? `<path class="kid-line" d="M${sorted.map(p => `${X(p.x).toFixed(1)},${Y(p.v).toFixed(1)}`).join(' L')}"/>` : '';
+  const dots = sorted.map(p => `<g class="hit" data-tip="${esc(`${p.label}: ${p.v} ${unit}`)}"><circle class="hitbox" cx="${X(p.x)}" cy="${Y(p.v)}" r="12"/><circle class="kid-dot" cx="${X(p.x)}" cy="${Y(p.v)}" r="5"/></g>`).join('');
+  return `<figure class="chart"><figcaption>${esc(title)}</figcaption>
+    <div class="legend"><span><i class="sw band3"></i>WHO −3 to +3 SD</span><span><i class="sw band2"></i>Healthy range (−2 to +2 SD)</span><span><i class="sw med"></i>WHO median</span><span><i class="sw kid"></i>Your child</span></div>
+    <svg viewBox="0 0 ${W2} ${H2}" role="img" aria-label="${esc(title)}">${ticksY}<path class="who-band3" d="${area(lo3, hi3)}"/><path class="who-band2" d="${area(lo2, hi2)}"/><path class="who-med" d="${line(med)}"/>${child}${dots}${ticksX}</svg>
+    <div class="tooltip" hidden></div>
+    ${table(sorted.map(p => [p.label, `${p.v} ${unit}`]), ['Date', title])}</figure>`;
+}
