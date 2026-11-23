@@ -1,11 +1,14 @@
 // Tiny IndexedDB wrapper. All data lives on this device; every change is also
 // recorded in a "dirty" list so the online backup (sync.js) knows what to upload.
-const DB_NAME = 'parenthood';
+// Each child has a separate database: the first child uses "parenthood",
+// others use "parenthood-<childId>". The children list lives in the first database.
+const MAIN_DB = 'parenthood';
 const VERSION = 2;
 // kv keys that are local-only and never uploaded
-export const LOCAL_KV = new Set(['dirty', 'kvDirty', 'sync', 'syncState', 'lastStage']);
-let dbp;
+export const LOCAL_KV = new Set(['dirty', 'kvDirty', 'sync', 'syncState', 'lastStage', 'installDismissed']);
 
+function makeDb(DB_NAME) {
+let dbp;
 function open() {
   if (dbp) return dbp;
   dbp = new Promise((resolve, reject) => {
@@ -39,18 +42,8 @@ function tx(stores, mode, fn) {
   }));
 }
 
-const reqP = r => new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
-
-// Record changed entry ids (value = change time) inside the same transaction
-async function markDirty(kvStore, ids, op) {
-  const dirty = (await reqP(kvStore.get('dirty'))) || {};
-  const now = Date.now();
-  ids.forEach(id => { dirty[id] = { op, at: now }; });
-  kvStore.put(dirty, 'dirty');
-}
-const changed = () => window.dispatchEvent(new Event('data-changed'));
-
-export const db = {
+return {
+  name: DB_NAME,
   async put(entry) {
     entry.updatedAt = Date.now();
     await tx(['entries', 'kv'], 'readwrite', async s => { s.entries.put(entry); await markDirty(s.kv, [entry.id], 'put'); });
@@ -105,3 +98,27 @@ export const db = {
     return all.length;
   },
 };
+}
+
+const reqP = r => new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+
+// Record changed entry ids (value = change time) inside the same transaction
+async function markDirty(kvStore, ids, op) {
+  const dirty = (await reqP(kvStore.get('dirty'))) || {};
+  const now = Date.now();
+  ids.forEach(id => { dirty[id] = { op, at: now }; });
+  kvStore.put(dirty, 'dirty');
+}
+const changed = () => { if (typeof window !== 'undefined') window.dispatchEvent(new Event('data-changed')); };
+
+const cache = {};
+export function dbFor(name) { return (cache[name] ||= makeDb(name)); }
+export const mainDb = dbFor(MAIN_DB);
+// `db` always points at the currently selected child's database (live binding)
+export let db = mainDb;
+export function useDb(name) { db = dbFor(name || MAIN_DB); return db; }
+export const childDbName = id => (!id || id === 'main' ? MAIN_DB : `${MAIN_DB}-${id}`);
+export async function deleteDatabase(name) {
+  delete cache[name];
+  await new Promise(r => { const q = indexedDB.deleteDatabase(name); q.onsuccess = q.onerror = q.onblocked = () => r(); });
+}

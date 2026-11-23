@@ -8,11 +8,17 @@ A personal, offline-first parenting app that tracks **every part of a child's da
 
 | Area | Features |
 |---|---|
-| **Home** | 🎤 **Tell me what happened**: speak (or type) a sentence such as "He ate 4 spoons of ragi at 8, napped from 11 to 12:30 and peed twice". The app turns it into separate log entries for you to check and save. Below that are **8 big one-tap buttons** (tap once to start a timer, tap again to stop; pee/poop count +1), with the rest under "More buttons". You can choose which 8 in Settings. Then today at a glance, plus three small tabs: **Today's log**, **Summary** (age-based targets) and **This month** (milestones to work on, with ideas; new things he did; the feelings activity; tip; next routine item). |
+| **Home** | 🎤 *Tell me what happened* (voice or typing → log entries). **Category chips** (Sleep · Food · Toilet · Play · Care · Learn · Feelings · Health, ordered for the child's age; the category of the next routine item opens first). Each category shows **big one-tap buttons**: tap to start a timer and tap again to stop, +1 counters, or quick forms. Below that are four age-appropriate "today at a glance" numbers and tabs for **Today's log / Summary / This month**. |
 | **Diary** | Any day's full log; edit, delete or add past entries. |
-| **Health** | Track an illness from start to recovery, with a temperature chart, symptoms, **prescriptions** (doctor, clinic, diagnosis, each medicine with dose, how often, days, before/after food, plus a **photo of the prescription**), **"Gave now"** buttons that show when each medicine was last given and when the next dose is due, doctor visits and vaccines. Everything is searchable ("saline", "Dr. Priya", "cough"…). |
-| **Heart** | Emotional intelligence: the stage goal and activities, logging of kind and challenging moments, triggers, and what calms him. |
-| **More** | Routine/timetable, **Milestones** (with a 💡 idea for each area), **New things** (daily firsts with photos), Trends, Growth, Foods tried, Vaccines, Guide, Settings, Install. |
+| **Health** | Illnesses with temperature chart, prescriptions (medicines, dose, frequency, days, photo), "Gave now" with next-dose time, doctor visits, search. |
+| **Heart** | **This week's emotional-intelligence practice**, plus the **EI roadmap**: month by month from birth to 3 years, then year by year to 15. It also logs kind and challenging moments (29 positive and 31 challenging options, filtered by age) with triggers and what calms the child. |
+| **More** | Routine, Milestones, **Physical growth** (first-year month-by-month checks, WHO comparison charts, standard readings table), New things, Trends, Foods, **Vaccines (India's government UIP schedule)**, Guide, Settings (split into sections). |
+
+**Several children:** tap the child's name at the top to switch, or add a child. Each child has their own logs, theme, timetable, milestones and health records. Boy/girl changes the wording (he/she) and the WHO chart used.
+
+**Age themes:** the colours and header art change every month until the first birthday (Newborn Snuggles → First Smiles → … → Little Crawler → Babble & Wave), then with each stage (Little Walker, Busy Toddler, Little Artist, Early Learner, Growing Explorer, Young Teen).
+
+**Growth vs WHO:** weight, height and head circumference are plotted on the WHO Child Growth Standards (0–5 years) and WHO Growth Reference 2007 (5–19 years), with the percentile and a plain-language verdict. Data comes from WHO's official `anthro` / `anthroplus` tables.
 
 **Photos:** add photos to any entry (meals, prescriptions, memories, illnesses…). They are shrunk on the phone to about 100 KB and backed up to a Google Drive folder.
 
@@ -98,6 +104,9 @@ js/db.js              IndexedDB storage (+ change queue)
 js/sync.js            automatic Google Sheets + Drive backup
 js/voice.js           speech-to-text + sentence → log entries
 js/photos.js          photo compression & display
+js/devdata.js         age themes, first-year physical checks, EI roadmap, UIP vaccines
+js/growth.js, who-data.js   WHO growth standards (LMS) and percentiles
+js/pronouns.js        he/she wording per child
 google-sheets-backup/Code.gs   paste into your sheet's Apps Script
 sw.js, manifest       offline + install
 ```
@@ -110,7 +119,8 @@ To change the content (e.g. add a food unit, a routine item or a guide article) 
 - Milestones: [CDC Learn the Signs. Act Early.](https://www.cdc.gov/ncbddd/actearly/milestones/), [CDC 9 months](https://www.cdc.gov/act-early/milestones/9-months.html)
 - Emotion coaching: [Gottman Institute](https://www.gottman.com/blog/an-introduction-to-emotion-coaching/), [CDC noticing & naming emotions](https://www.cdc.gov/parenting-toddlers/noticing-and-naming/emotion-coaching.html)
 - Serve & return: [Harvard Center on the Developing Child](https://developingchild.harvard.edu/resources/5-steps-for-brain-building-serve-and-return/)
-- Vaccines: [Indian Academy of Pediatrics](https://iapindia.org/pdf/Immunization.pdf) (schedule changes — confirm with your doctor)
+- Vaccines: [MoHFW National Immunization Schedule](https://www.mohfw.gov.in/sites/default/files/National%20Immunization%20Schedule.pdf) / [NHM](https://nhm.gov.in/New_Updates_2018/NHM_Components/Immunization/report/National_%20Immunization_Schedule.pdf) (confirm dates on the MCP card)
+- Growth: WHO Child Growth Standards & Growth Reference 2007 — [WHO anthro](https://github.com/WorldHealthOrganization/anthro), [WHO anthroplus](https://github.com/WorldHealthOrganization/anthroplus)
 
 ## Ideas for later
 - Automatic two-way sync between parents' phones

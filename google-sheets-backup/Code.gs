@@ -1,5 +1,5 @@
 /**
- * Happy Parenthood — Google Sheets backup receiver (version 2: with photo backup).
+ * Happy Parenthood — Google Sheets backup receiver (version 3: photos + several children).
  *
  * SETUP / UPDATE:
  *  1. Open your backup Google Sheet → Extensions → Apps Script.
@@ -22,7 +22,7 @@
  */
 const SECRET = 'change-this-to-your-own-secret-phrase';
 
-const HEADERS = ['id', 'date', 'start', 'end', 'duration_min', 'type', 'activity', 'details', 'note', 'logged_by', 'deleted', 'updated_at', 'json', 'photos'];
+const HEADERS = ['id', 'date', 'start', 'end', 'duration_min', 'type', 'activity', 'details', 'note', 'logged_by', 'deleted', 'updated_at', 'json', 'photos', 'child'];
 const PHOTO_HEADERS = ['id', 'file_id', 'url', 'saved_at'];
 const PHOTO_FOLDER = 'Happy Parenthood Photos';
 
@@ -96,7 +96,7 @@ function saveRows(rows, deletes) {
   let updated = 0;
   rows.forEach(r => {
     const values = [r.id, r.date, r.start, r.end, r.duration, r.type, r.activity, r.details, r.note, r.by, false,
-      new Date(r.updatedAt || Date.now()), JSON.stringify(r.entry), r.photos || ''];
+      new Date(r.updatedAt || Date.now()), JSON.stringify(r.entry), r.photos || '', r.childName || ''];
     if (index[r.id]) { sh.getRange(index[r.id], 1, 1, values.length).setValues([values]); updated++; }
     else { append.push(values); index[r.id] = -1; }
   });

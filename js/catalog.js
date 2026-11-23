@@ -209,6 +209,15 @@ export const POSITIVE_BEHAVIOURS = [
   { k: 'calming', label: 'Calmed himself', icon: '🌬️' }, { k: 'honesty', label: 'Honesty', icon: '🗣️' },
   { k: 'courage', label: 'Tried something hard', icon: '🦁' }, { k: 'respect', label: 'Respect / manners', icon: '🎩' },
   { k: 'curiosity', label: 'Curiosity / asked why', icon: '🔍' }, { k: 'social', label: 'Social smile / engaged', icon: '😊' },
+  { k: 'eyecontact', label: 'Eye contact / turned to name', icon: '👀' }, { k: 'joy', label: 'Laughed / showed joy', icon: '😄' },
+  { k: 'affection', label: 'Hug / kiss / affection', icon: '🤗' }, { k: 'gentle', label: 'Gentle with baby / pet', icon: '🐾' },
+  { k: 'sorry', label: 'Said sorry / made up', icon: '🕊️' }, { k: 'listened', label: 'Listened / followed instruction', icon: '👂' },
+  { k: 'words', label: 'Used words for feelings', icon: '💬' }, { k: 'acceptno', label: 'Accepted "no" calmly', icon: '🙂' },
+  { k: 'persist', label: 'Kept trying (didn\'t give up)', icon: '💪' }, { k: 'selfhelp', label: 'Did it himself (eat, dress, tidy)', icon: '🧦' },
+  { k: 'tidy', label: 'Tidied up / put things back', icon: '🧺' }, { k: 'include', label: 'Included others in play', icon: '🧑‍🤝‍🧑' },
+  { k: 'brave', label: 'Brave at doctor / new place', icon: '🩹' }, { k: 'generous', label: 'Gave / generous', icon: '🎁' },
+  { k: 'forgive', label: 'Forgave someone', icon: '🤍' }, { k: 'standup', label: 'Stood up for someone', icon: '🛡️' },
+  { k: 'responsible', label: 'Responsible without reminder', icon: '✅' },
 ];
 export const CHALLENGING_BEHAVIOURS = [
   { k: 'crying', label: 'Inconsolable crying', icon: '😭' }, { k: 'tantrum', label: 'Tantrum / meltdown', icon: '🌋' },
@@ -218,16 +227,25 @@ export const CHALLENGING_BEHAVIOURS = [
   { k: 'sleepfight', label: 'Fighting sleep', icon: '🛏️' }, { k: 'screen', label: 'Screen battle', icon: '📺' },
   { k: 'lying', label: 'Lying', icon: '🤥' }, { k: 'rude', label: 'Rude words / back-talk', icon: '💢' },
   { k: 'sibling', label: 'Conflict with other kids', icon: '⚔️' },
+  { k: 'biting', label: 'Biting', icon: '🦷' }, { k: 'hairpull', label: 'Hair pulling / scratching', icon: '🫳' },
+  { k: 'screaming', label: 'Screaming / shouting', icon: '📢' }, { k: 'clingy', label: 'Very clingy', icon: '🫂' },
+  { k: 'nightcry', label: 'Night waking & crying', icon: '🌃' }, { k: 'grabbing', label: 'Grabbing / not sharing', icon: '✊' },
+  { k: 'ignoring', label: 'Ignoring instructions', icon: '🙉' }, { k: 'runaway', label: 'Running away / unsafe', icon: '🏃' },
+  { k: 'breaking', label: 'Breaking things on purpose', icon: '💥' }, { k: 'headbang', label: 'Head banging', icon: '🤕' },
+  { k: 'fear', label: 'Fear / anxiety', icon: '😨' }, { k: 'jealous', label: 'Jealousy', icon: '😒' },
+  { k: 'sulking', label: 'Sulking / withdrawn', icon: '😶' }, { k: 'bedtime', label: 'Bedtime stalling', icon: '🛌' },
+  { k: 'badwords', label: 'Bad words', icon: '🤬' }, { k: 'teasing', label: 'Teasing / bullying', icon: '😈' },
+  { k: 'homework', label: 'Homework refusal', icon: '📚' }, { k: 'tooMuchScreen', label: 'Demanding more screen', icon: '📲' },
 ];
-export const TRIGGERS = ['Hungry', 'Tired / overdue nap', 'Transition (stopping play, leaving)', 'Wanted something & told no', 'Frustrated with a task',
+export const TRIGGERS = ['Hungry', 'Tired / overdue nap', 'Teething / pain', 'Too hot / cold / uncomfortable', 'New people / stranger', 'Transition (stopping play, leaving)', 'Wanted something & told no', 'Frustrated with a task',
   'Overstimulated / crowd / noise', 'Wanted attention', 'Unwell / teething', 'Change in routine', 'Another child', 'Screen ended', "Don't know"];
 export const RESPONSES = ['Stayed calm & close', 'Named the feeling', 'Emotion coaching (5 steps)', 'Hug / time-in', 'Redirected', 'Offered a choice',
-  'Calm-down breathing', 'Ignored minor behaviour', 'Set a clear limit', 'Natural / logical consequence', 'Praised effort', 'Problem-solved together', 'Lost my temper (it happens — repair!)'];
+  'Calm-down breathing', 'Ignored minor behaviour', 'Set a clear limit', 'Natural / logical consequence', 'Praised effort', 'Problem-solved together', 'Distracted with a song / game', 'Gave space, stayed nearby', 'Fed / let him rest', 'Lost my temper (it happens — repair!)'];
 export const OUTCOMES = ['Calmed within 2 min', 'Calmed in 2–10 min', 'Took over 10 min', 'Escalated', 'Repaired & reconnected after'];
 
 // Behaviours worth logging only from a certain age
-export const BEHAVIOUR_MIN = { lying: 36, rude: 36, sibling: 18, screen: 18, honesty: 36, respect: 24, sharing: 15, patience: 18, calming: 24, gratitude: 18, empathy: 15, hitting: 9, throwing: 9, whining: 15, defiance: 15, tantrum: 12, helping: 12, courage: 9 };
-export const BEHAVIOUR_MAX = { crying: 24, social: 24, separation: 72 };
+export const BEHAVIOUR_MIN = { sorry: 18, listened: 12, words: 20, acceptno: 15, persist: 9, selfhelp: 12, tidy: 15, include: 30, brave: 12, generous: 15, forgive: 36, standup: 48, responsible: 60, gentle: 9, grabbing: 12, ignoring: 15, runaway: 15, breaking: 18, jealous: 18, sulking: 36, bedtime: 18, badwords: 30, teasing: 48, homework: 60, tooMuchScreen: 24, screaming: 9, hairpull: 6, lying: 36, rude: 36, sibling: 18, screen: 18, honesty: 36, respect: 24, sharing: 15, patience: 18, calming: 24, gratitude: 18, empathy: 15, hitting: 9, throwing: 9, whining: 15, defiance: 15, tantrum: 12, helping: 12, courage: 9 };
+export const BEHAVIOUR_MAX = { eyecontact: 24, nightcry: 48, headbang: 48, clingy: 96, crying: 24, social: 24, separation: 72 };
 export function behaviourForAge(list, months) {
   return list.filter(b => (BEHAVIOUR_MIN[b.k] ?? 0) <= months && months < (BEHAVIOUR_MAX[b.k] ?? 9999));
 }

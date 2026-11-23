@@ -1,12 +1,15 @@
-import { db } from './db.js';
+import { db, mainDb, useDb, childDbName, deleteDatabase } from './db.js';
 import { LOG_TYPES, FOOD_UNITS, MED_FREQ, typeByKey, typesForAge, fieldOptions, fieldsForAge,
   POSITIVE_BEHAVIOURS, CHALLENGING_BEHAVIOURS, TRIGGERS, RESPONSES, OUTCOMES, behaviourForAge } from './catalog.js';
-import { STAGES, stageFor, nextStage, MILESTONES, RED_FLAGS, VACCINES, MILESTONE_TIPS, milestoneFocus } from './stages.js';
+import { STAGES, stageFor, nextStage, MILESTONES, RED_FLAGS, MILESTONE_TIPS, milestoneFocus } from './stages.js';
+import { themeFor, MONTHLY_PHYSICAL, EI_ROADMAP, eiRowFor, UIP_VACCINES } from './devdata.js';
+import { INDICATORS, whoValue, zScore, percentile, zLabel } from './growth.js';
+import { applyPronouns, pr } from './pronouns.js';
 import { GUIDE, DAILY_TIPS } from './guide.js';
 import { esc, uid, dateKey, parseKey, addDays, fmtTime, toLocalInput, fromLocalInput, fmtDur, fmtDateLong, fmtDateShort,
   hmToMin, minToHm, ageMonths, ageText, dayOfYear, entryMinutes } from './util.js';
-import { barChart, pairChart, lineChart, wireTooltips } from './charts.js';
-import { startAutoSync, syncNow, getConfig, setConfig, getState, pendingCount, testConnection, restoreFromSheet } from './sync.js';
+import { barChart, pairChart, lineChart, growthChart, wireTooltips } from './charts.js';
+import { startAutoSync, syncNow, getConfig, setConfig, getState, pendingCount, testConnection, restoreFromSheet, childrenList } from './sync.js';
 import { savePhotoFile, thumbHtml, watchPhotos } from './photos.js';
 import { voiceSupported, listen, stopListening, parseVoice } from './voice.js';
 
@@ -14,14 +17,14 @@ const APP_NAME = 'Happy Parenthood';
 
 // ------------------------------------------------------------------ state
 const S = {
-  settings: null, months: 0, stage: null,
-  view: 'home', homeTab: 'log', moreOpen: false, diaryDate: dateKey(), growTab: 'milestones', trendDays: 7, guideAll: false,
+  settings: null, months: 0, stage: null, theme: null, child: 'main', children: [], P: pr('boy'),
+  view: 'home', homeTab: 'log', homeCat: null, settingsTab: null, diaryDate: dateKey(), growTab: 'milestones', trendDays: 7, guideAll: false,
   healthTab: 'illness', healthQ: '', voiceItems: null, voiceText: '',
 };
 const $ = sel => document.querySelector(sel);
 const main = () => $('#main');
 
-const DEFAULT_SETTINGS = { name: '', dob: '', premature: 0, wake: '06:30', caregivers: ['Amma', 'Appa', 'Paati', 'Thatha'], me: 'Amma', theme: 'auto', voiceLang: 'en-IN', home: null };
+const DEFAULT_SETTINGS = { name: '', dob: '', sex: 'boy', premature: 0, wake: '06:30', caregivers: ['Amma', 'Appa', 'Paati', 'Thatha'], me: 'Amma', theme: 'auto', voiceLang: 'en-IN' };
 
 // Pseudo log types handled outside the catalog
 const SPECIAL = {
@@ -34,7 +37,7 @@ const typeInfo = k => typeByKey(k) || SPECIAL[k] || { key: k, label: k, icon: '�
 const CAT = { sleep: 'sleep', nap: 'sleep', wake: 'sleep', meal: 'food', breastfeed: 'food', bottle: 'food', water: 'food', pee: 'toilet', poop: 'toilet', potty: 'toilet',
   bath: 'care', massage: 'care', teeth: 'care', play: 'play', walk: 'play', floor: 'play', exercise: 'play', screen: 'play', hobby: 'play',
   study: 'learn', reading: 'learn', homework: 'learn', sick: 'health', medicine: 'health', illness: 'health', prescription: 'health', doctor: 'health',
-  memory: 'feel', mood: 'feel', kind: 'feel', note: 'feel', growth: 'health' };
+  memory: 'feel', mood: 'feel', kind: 'feel', note: 'feel', behaviourNeg: 'feel', growth: 'health', behaviour: 'feel', ei: 'feel' };
 
 // All home buttons. mode: toggle (tap start / tap stop), count (instant +1), form (opens a short form), kind (kind act)
 const QUICK = [
@@ -50,15 +53,32 @@ const QUICK = [
   { k: 'bottle', mode: 'form', icon: '🍼', label: 'Bottle', max: 48 }, { k: 'water', mode: 'form', icon: '🥤', label: 'Water', min: 6 },
   { k: 'sick', mode: 'form', icon: '🌡️', label: 'Temp' }, { k: 'medicine', mode: 'form', icon: '💊', label: 'Medicine' },
   { k: 'mood', mode: 'form', icon: '🙂', label: 'Mood' }, { k: 'kind', mode: 'kind', icon: '💗', label: 'Kind act' },
-  { k: 'note', mode: 'form', icon: '📝', label: 'Note' },
+  { k: 'note', mode: 'form', icon: '📝', label: 'Note' }, { k: 'teeth', mode: 'form', icon: '🪥', label: 'Teeth', min: 6 },
+  { k: 'potty', mode: 'form', icon: '🚽', label: 'Potty try', min: 15, max: 60 }, { k: 'growth', mode: 'form', icon: '📏', label: 'Weight/height' },
+  { k: 'doctor', mode: 'form', icon: '🩺', label: 'Doctor visit' }, { k: 'behaviourNeg', mode: 'kindNeg', icon: '🌋', label: 'Tough moment', min: 9 },
 ];
 const quickForAge = () => QUICK.filter(q => S.months >= (q.min ?? 0) && S.months < (q.max ?? 9999));
-function homeKeys() {
-  const avail = quickForAge().map(q => q.k);
-  const chosen = (S.settings.home || []).filter(k => avail.includes(k));
-  if (chosen.length) return chosen.slice(0, 8);
-  const pref = ['sleep', 'nap', 'meal', 'breastfeed', 'pee', 'poop', 'play', 'bath', 'memory', 'walk', 'study', 'homework'];
-  return pref.filter(k => avail.includes(k)).slice(0, 8);
+
+// Home categories (design C). Order adapts to age; each shows its big buttons.
+const CATS = [
+  { k: 'sleep', icon: '🌙', label: 'Sleep' }, { k: 'food', icon: '🥣', label: 'Food' }, { k: 'toilet', icon: '💛', label: 'Toilet' },
+  { k: 'play', icon: '🧸', label: 'Play' }, { k: 'care', icon: '🛁', label: 'Care' }, { k: 'learn', icon: '📚', label: 'Learn' },
+  { k: 'health', icon: '🩺', label: 'Health' }, { k: 'feel', icon: '💗', label: 'Feelings' },
+];
+function catsForAge() {
+  const avail = quickForAge();
+  let order = S.months < 36 ? ['sleep', 'food', 'toilet', 'play', 'care', 'learn', 'feel', 'health']
+    : S.months < 72 ? ['food', 'play', 'sleep', 'learn', 'toilet', 'care', 'feel', 'health']
+      : ['learn', 'play', 'food', 'sleep', 'care', 'feel', 'health', 'toilet'];
+  return order.map(k => CATS.find(c => c.k === k)).filter(c => avail.some(q => (CAT[q.k] || 'feel') === c.k));
+}
+// Which category to open first: the one of the next routine item (age-appropriate by design)
+async function defaultCat(cats) {
+  const r = await getRoutine();
+  const now = new Date().getHours() * 60 + new Date().getMinutes();
+  const next = r.find(x => x.min >= now - 20) || r[0];
+  const c = CAT[next?.type];
+  return cats.some(x => x.k === c) ? c : cats[0]?.k;
 }
 
 // Install-as-app support
@@ -68,9 +88,11 @@ const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platfo
 
 // ------------------------------------------------------------------ boot
 async function boot() {
-  S.settings = await db.getKV('settings');
-  if (S.settings) S.settings = { ...DEFAULT_SETTINGS, ...S.settings };
-  applyTheme();
+  S.children = await childrenList();
+  let cur = 'main';
+  try { cur = localStorage.getItem('hp-child') || 'main'; } catch (e) { /* private mode */ }
+  if (!S.children.some(c => c.id === cur)) cur = 'main';
+  await selectChild(cur, false);
   document.addEventListener('click', onClick);
   document.addEventListener('change', onChange);
   document.addEventListener('input', onInput);
@@ -82,18 +104,36 @@ async function boot() {
   window.addEventListener('appinstalled', () => { installEvt = null; toast(`🎉 Installed! Open ${APP_NAME} from your home screen.`); if (S.settings?.dob) renderHeader(); });
   startAutoSync({ buildRow, status: renderSyncBadge });
   if (!S.settings?.dob) return renderOnboarding();
-  await refreshAge();
   route();
 }
 
+// Switch the whole app to another child (each child has a separate database)
+async function selectChild(id, render = true) {
+  S.child = id;
+  useDb(childDbName(id));
+  try { localStorage.setItem('hp-child', id); } catch (e) { /* ignore */ }
+  const st = await db.getKV('settings');
+  S.settings = st ? { ...DEFAULT_SETTINGS, ...st } : null;
+  S.homeCat = null; S.homeTab = 'log';
+  applyTheme();
+  if (S.settings?.dob) await refreshAge();
+  if (render) { S.view = 'home'; route(); }
+}
+
+async function saveChildrenList() {
+  S.children = S.children.map(c => c.id === S.child ? { ...c, name: S.settings?.name || c.name } : c);
+  await mainDb.setKV('children', S.children);
+}
+
 // Row sent to the Google Sheet: readable columns + the full entry for restoring
-async function buildRow(e) {
+async function buildRow(e, child, cdb) {
   const t = typeInfo(e.type);
   const stamp = ms => ms ? `${dateKey(ms)} ${fmtTime(ms)}` : '';
   const links = [];
-  for (const pid of e.data?.photos || []) { const p = await db.getPhoto(pid); if (p?.driveUrl) links.push(p.driveUrl); }
+  for (const pid of e.data?.photos || []) { const p = await cdb.getPhoto(pid); if (p?.driveUrl) links.push(p.driveUrl); }
+  const childName = child?.name || (child?.id === S.child ? S.settings?.name : '') || '';
   return { id: e.id, date: e.date, start: stamp(e.start), end: t.timed ? stamp(e.end) : '', duration: e.end && t.timed ? Math.round(entryMinutes(e)) : '',
-    type: e.type, activity: t.label, details: entrySummary(e), note: e.note || '', by: e.by || '', updatedAt: e.updatedAt, photos: links.join('\n'), entry: e };
+    type: e.type, activity: t.label, details: entrySummary(e), note: e.note || '', by: e.by || '', updatedAt: e.updatedAt, photos: links.join('\n'), childName, entry: e };
 }
 
 async function renderSyncBadge(state) {
@@ -114,6 +154,9 @@ async function renderSyncBadge(state) {
 async function refreshAge() {
   S.months = ageMonths(S.settings.dob, Date.now(), Number(S.settings.premature) || 0);
   S.stage = stageFor(S.months);
+  applyPronouns(S.settings.sex);
+  S.P = pr(S.settings.sex);
+  applyAgeTheme();
 }
 
 function applyTheme() {
@@ -122,20 +165,44 @@ function applyTheme() {
   else document.documentElement.setAttribute('data-theme', t);
 }
 
+// Colours change with age: every month in the first year, then per stage
+function applyAgeTheme() {
+  const th = S.theme = themeFor(S.months);
+  const r = document.documentElement.style;
+  r.setProperty('--t-accent', th.accent); r.setProperty('--t-accent-dark', th.dark);
+  r.setProperty('--t-hero', `linear-gradient(135deg, ${th.hero[0]} 0%, ${th.hero[1]} 100%)`);
+  r.setProperty('--t-hero-dark', `linear-gradient(135deg, ${th.heroDark[0]} 0%, ${th.heroDark[1]} 100%)`);
+  document.querySelector('meta[name=theme-color]')?.setAttribute('content', th.accent);
+}
+
 const NAV_OF = { home: 'home', diary: 'diary', health: 'health', heart: 'heart', more: 'more', grow: 'more', routine: 'more', guide: 'more', settings: 'more' };
-function route() {
+let lastPage = '';
+// Re-render the current screen. The scroll position is kept when staying on the same
+// screen (e.g. after tapping a button or a checkbox) and reset only when changing screens.
+async function route() {
+  const page = `${S.view}|${S.growTab}|${S.settingsTab}`; // in-page tabs (home/health) keep the scroll position
+  const keep = page === lastPage;
+  const y = window.scrollY;
+  const open = keep ? [...main().querySelectorAll('details')].map(d => d.open) : null;
+  lastPage = page;
   document.querySelectorAll('nav.tabs button').forEach(b => b.setAttribute('aria-current', b.dataset.view === NAV_OF[S.view] ? 'page' : 'false'));
   document.body.dataset.view = S.view;
   renderHeader();
-  ({ home: renderHome, diary: renderDiary, health: renderHealth, heart: renderHeart, more: renderMore, grow: renderGrow, routine: renderRoutine, guide: renderGuide, settings: renderSettings })[S.view]();
-  window.scrollTo(0, 0);
+  await ({ home: renderHome, diary: renderDiary, health: renderHealth, heart: renderHeart, more: renderMore, grow: renderGrow, routine: renderRoutine, guide: renderGuide, settings: renderSettings })[S.view]();
+  if (keep) {
+    const ds = main().querySelectorAll('details');
+    if (open && open.length === ds.length) ds.forEach((d, i) => { d.open = open[i]; });
+    window.scrollTo(0, y);
+  } else window.scrollTo(0, 0);
 }
 
 function renderHeader() {
   const s = S.settings;
   const canInstall = !isStandalone() && (installEvt || isIOS);
-  $('#hdr').innerHTML = `<div class="who"><div class="avatar" aria-hidden="true">${esc((s.name || '?')[0].toUpperCase())}</div>
-    <div><div class="name">${esc(s.name)}</div><div class="sub">${esc(ageText(s.dob))} · ${S.stage.emoji} ${esc(S.stage.name)}</div></div></div>
+  const th = S.theme;
+  $('#hdr').innerHTML = `<span class="hdr-deco" aria-hidden="true">${esc(th.deco)}</span>
+    <button class="who" data-act="children" aria-label="Switch or add child"><span class="avatar" aria-hidden="true">${esc((s.name || '?')[0].toUpperCase())}</span>
+    <span><span class="name">${esc(s.name)} <span class="caret">▾</span></span><span class="sub">${esc(ageText(s.dob))} · ${th.emoji} ${esc(th.label)}: ${esc(th.name)}</span></span></button>
     <div class="hdr-actions">${canInstall ? '<button class="pill-btn install" data-act="install">📲 Install</button>' : ''}
     <button id="syncBadge" class="sync-badge" data-act="view" data-view="settings"></button>
     <button class="icon-btn" data-act="view" data-view="settings" aria-label="Settings">⚙️</button></div>`;
@@ -204,37 +271,35 @@ function entrySummary(e) {
   return parts.join(' · ');
 }
 
-// ------------------------------------------------------------------ HOME
+// ------------------------------------------------------------------ HOME (design C: category tabs)
 async function renderHome() {
   const today = dateKey();
   const list = await entriesAround(today);
   const sm = summarize(list, today);
   const running = (await db.all()).filter(e => typeInfo(e.type).timed && e.start && !e.end);
   const banner = await stageBanner();
-  const keys = homeKeys();
-  const quick = quickForAge();
-  const mainBtns = keys.map(k => quick.find(q => q.k === k)).filter(Boolean);
-  const moreBtns = quick.filter(q => !keys.includes(q.k));
-  const hiddenRunning = running.filter(e => !keys.includes(e.type) && !(S.moreOpen && moreBtns.some(q => q.k === e.type)));
-  const tg = S.stage.targets;
+  const cats = catsForAge();
+  if (!S.homeCat || !cats.some(c => c.k === S.homeCat)) S.homeCat = await defaultCat(cats);
+  const btns = quickForAge().filter(q => (CAT[q.k] || 'feel') === S.homeCat);
+  const otherRunning = running.filter(e => (CAT[e.type] || 'feel') !== S.homeCat);
 
   let tabBody = '';
-  if (S.homeTab === 'log') tabBody = entryList(list.filter(e => e.date === today).reverse(), 'Nothing logged yet today. Tap a button above, or say it with 🎤.');
-  else if (S.homeTab === 'summary') tabBody = homeSummary(sm, tg);
+  if (S.homeTab === 'log') tabBody = entryList(list.filter(e => e.date === today).reverse(), 'Nothing logged yet today. Pick a category above and tap a button, or say it with 🎤.');
+  else if (S.homeTab === 'summary') tabBody = homeSummary(sm, S.stage.targets);
   else tabBody = await homeMonth(list, today);
 
   main().innerHTML = `
     ${banner}
     ${await installNudge()}
-    ${hiddenRunning.map(e => `<div class="run-pill c-${CAT[e.type] || 'feel'}"><span>${typeInfo(e.type).icon} <b>${esc(typeInfo(e.type).label)}</b> <span data-since="${e.start}">${fmtDur(entryMinutes(e))}</span></span>
+    <button class="voice-cta" data-act="voice"><span class="mic-dot">🎤</span><span><b>Tell me what happened</b><br><small>“Ate 4 spoons of ragi at 8 and napped for an hour”</small></span></button>
+    <div class="cats" role="tablist" aria-label="Categories">
+      ${cats.map(c => { const n = running.filter(e => (CAT[e.type] || 'feel') === c.k).length; return `<button class="cat c-${c.k}" role="tab" data-act="homeCat" data-cat="${c.k}" aria-selected="${c.k === S.homeCat}">${c.icon} ${c.label}${n ? ' <i class="dot" aria-label="timer running"></i>' : ''}</button>`; }).join('')}
+      <button class="cat all" data-act="openPicker">＋ All</button>
+    </div>
+    <section class="big2">${btns.map(q => quickBtn(q, running, sm)).join('')}</section>
+    ${otherRunning.map(e => `<div class="run-pill c-${CAT[e.type] || 'feel'}"><span>${typeInfo(e.type).icon} <b>${esc(typeInfo(e.type).label)}</b> <span data-since="${e.start}">${fmtDur(entryMinutes(e))}</span></span>
       <button class="pill-btn" data-act="toggle" data-type="${e.type}">Stop</button></div>`).join('')}
-    <button class="voice-cta" data-act="voice"><span class="mic-dot">🎤</span><span><b>Tell me what happened</b><br><small>“He ate 4 spoons of ragi at 8 and napped for an hour”</small></span></button>
-    <section class="quick">${mainBtns.map(q => quickBtn(q, running, sm)).join('')}</section>
-    <button class="more-toggle" data-act="moreBtns" aria-expanded="${S.moreOpen}">${S.moreOpen ? '▴ Fewer buttons' : `▾ More buttons (${moreBtns.length})`}</button>
-    ${S.moreOpen ? `<section class="quick small">${moreBtns.map(q => quickBtn(q, running, sm)).join('')}</section>` : ''}
-    <section class="glance" aria-label="Today at a glance">
-      ${glance('🌙', fmtDur(sm.sleepMin), 'sleep')}${glance('🥣', sm.meals, 'meals')}${glance('💛', sm.pee, 'pee')}${glance('🧸', fmtDur(sm.playMin + sm.outdoorMin), 'play')}
-    </section>
+    <section class="glance" aria-label="Today at a glance">${glanceForAge(sm)}</section>
     <div class="seg" role="tablist">
       ${[['log', "Today's log"], ['summary', 'Summary'], ['month', 'This month']].map(([k, l]) => `<button role="tab" data-act="homeTab" data-tab="${k}" aria-pressed="${S.homeTab === k}">${l}</button>`).join('')}
     </div>
@@ -254,9 +319,18 @@ function quickBtn(q, running, sm) {
     return `<button class="qb c-${c}" data-act="quick" data-type="${q.k}"><span class="qi">${q.icon}</span><span class="ql">${esc(q.label)}${n !== null ? ' +1' : ''}</span><small>${n !== null ? `${n} today` : 'tap'}</small></button>`;
   }
   if (q.mode === 'kind') return `<button class="qb c-${c}" data-act="behaviour" data-kind="pos"><span class="qi">${q.icon}</span><span class="ql">${esc(q.label)}</span><small>tap</small></button>`;
+  if (q.mode === 'kindNeg') return `<button class="qb c-${c}" data-act="behaviour" data-kind="neg"><span class="qi">${q.icon}</span><span class="ql">${esc(q.label)}</span><small>tap</small></button>`;
   return `<button class="qb c-${c}" data-act="form" data-type="${q.k}" ${q.k === 'memory' ? 'data-first="1"' : ''}><span class="qi">${q.icon}</span><span class="ql">${esc(q.label)}</span><small>add</small></button>`;
 }
 const glance = (icon, v, l) => `<button class="g" data-act="homeTab" data-tab="summary"><span>${icon}</span><b>${esc(v)}</b><small>${l}</small></button>`;
+// The four numbers that matter most at this age
+function glanceForAge(sm) {
+  const m = S.months;
+  if (m < 12) return glance('🌙', fmtDur(sm.sleepMin), 'sleep') + glance('🍼', sm.feeds + sm.meals, 'feeds+meals') + glance('💛', sm.pee, 'wet') + glance('🧸', fmtDur(sm.playMin + sm.outdoorMin), 'play');
+  if (m < 36) return glance('🌙', fmtDur(sm.sleepMin), 'sleep') + glance('🥣', sm.meals, 'meals') + glance('🚽', sm.pee, 'pee') + glance('🌳', fmtDur(sm.outdoorMin), 'outdoor');
+  if (m < 72) return glance('🌙', fmtDur(sm.sleepMin), 'sleep') + glance('🥣', sm.meals, 'meals') + glance('🌳', fmtDur(sm.outdoorMin), 'outdoor') + glance('📱', fmtDur(sm.screenMin), 'screen');
+  return glance('🌙', fmtDur(sm.sleepMin), 'sleep') + glance('📚', fmtDur(sm.learnMin), 'study') + glance('⚽', fmtDur(sm.outdoorMin), 'active') + glance('📱', fmtDur(sm.screenMin), 'screen');
+}
 
 function homeSummary(sm, tg) {
   return `<section class="tiles">
@@ -298,10 +372,15 @@ async function homeMonth(list, today) {
         }).join('')}</ul>${todo.length > limit ? `<button class="btn small" data-act="goGrow" data-tab="milestones">See all ${todo.length}</button>` : ''}`;
       })() : '<p>🎉 All done! Great going.</p>'}</section>`;
   };
+  const th = S.theme;
+  const phys = S.months <= 12.5 ? MONTHLY_PHYSICAL.find(r => r.m === Math.min(12, Math.max(1, Math.floor(S.months)))) : null;
+  const physState = await db.getKV('physical', {});
   return `
+    <section class="card theme-card"><div class="theme-now"><span class="big-emoji">${th.emoji}</span><div><b>${esc(th.label)}: ${esc(th.name)}</b><br><small>${esc(th.about)}</small></div></div>
+      ${phys ? `<div class="row between"><span class="small"><b>Body checks for month ${phys.m}:</b> ${phys.items.filter((_, i) => physState[`${phys.m}:${i}`]).length}/${phys.items.length} done</span><button class="btn small" data-act="goGrow" data-tab="physical">Open</button></div>` : ''}</section>
     ${msList(next, `🎯 Working towards · by ${ageLabel(next?.at)}`, 'next', 5)}
     ${passed && passed !== next ? msList(passed, `✅ Should be doing now · by ${ageLabel(passed.at)}`, 'passed', 4) : ''}
-    <p class="muted small">Tick a milestone when you see him do it. Every child grows at their own pace — if something in "should be doing now" isn't happening, mention it at the next paediatric visit.</p>
+    <p class="muted small">Tick a milestone when you see ${S.P.him} do it. Every child grows at their own pace — if something in "should be doing now" isn't happening, mention it at the next paediatric visit.</p>
     <section class="card"><div class="row between"><div class="label">✨ New things this month (${news.length})</div><button class="btn small" data-act="form" data-type="memory" data-first="1">＋ Add</button></div>
       ${news.length ? `<ul class="mini-list">${news.slice(0, 4).map(e => `<li data-act="edit" data-id="${e.id}"><b>${esc(fmtDateShort(e.date))}</b> ${esc(e.data?.text || e.note)}</li>`).join('')}</ul>` : '<p class="muted small">Clapped? Said a new word? Stood up? Tap ✨ New today on the home screen.</p>'}</section>
     <section class="card ei"><div class="label">💛 Today's feelings activity</div><p>${esc(ei)}</p>
@@ -565,10 +644,10 @@ function openVoice() {
   openSheet(`<div class="sheet-hd"><h3>🎤 Tell me what happened</h3><button class="icon-btn" data-act="close" aria-label="Close">✕</button></div>
     ${voiceSupported ? `<button class="big-mic" id="vMic" data-act="vMic" aria-label="Start speaking"><span>🎤</span><small id="vMicLbl">Tap and speak</small></button>` :
       `<p class="warn">Tap the box below, then press the 🎤 microphone on your phone's keyboard and speak.</p>`}
-    <label>What I heard (you can correct it or type)<textarea id="vText" rows="4" placeholder="e.g. He ate 4 spoons of ragi porridge and half a banana at 8. He napped from 11 to 12:30. He peed twice.">${esc(S.voiceText)}</textarea></label>
+    <label>What I heard (you can correct it or type)<textarea id="vText" rows="4" placeholder="e.g. ${S.P.He} ate 4 spoons of ragi porridge and half a banana at 8. ${S.P.He} napped from 11 to 12:30. ${S.P.He} peed twice.">${esc(S.voiceText)}</textarea></label>
     <div class="row wrap"><label class="small inline">Language <select id="vLang">${langs.map(([v, l]) => `<option value="${v}" ${v === S.settings.voiceLang ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
     <details class="small"><summary>What can I say?</summary><ul>
-      <li>“He ate 2 idlis and half a bowl of curd rice for lunch”</li><li>“Napped from 1 to 2:30” · “Slept for 45 minutes”</li>
+      <li>“${S.P.He} ate 2 idlis and half a bowl of curd rice for lunch”</li><li>“Napped from 1 to 2:30” · “Slept for 45 minutes”</li>
       <li>“Peed twice” · “Pooped at 10, a bit runny”</li><li>“Gave 2.5 ml paracetamol at 1 pm” · “Fever 100.4 and cough”</li>
       <li>“Bath at 10:30 for 20 minutes. Then we went to the park for an hour”</li><li>Anything else is saved as a note.</li></ul>
       <p class="muted">Times without am/pm are taken as the most recent one. Tamil and Hindi are written down as notes.</p></details>
@@ -636,14 +715,14 @@ async function openBehaviour(kind, entry = null) {
   openSheet(`<form id="behform" data-id="${entry?.id || ''}" data-kind="${kind}">
     <div class="sheet-hd"><h3>${kind === 'pos' ? '💗 Kind / positive moment' : '🌋 Challenging moment'}</h3><button type="button" class="icon-btn" data-act="close" aria-label="Close">✕</button></div>
     <fieldset><legend>What happened</legend><div class="chips">${list.map(b => `<label class="chip"><input type="radio" name="b" value="${b.k}" ${d.b === b.k ? 'checked' : ''} required><span>${b.icon} ${esc(b.label)}</span></label>`).join('')}</div></fieldset>
-    ${textWithMic('details', 'Details', d.details || '', kind === 'pos' ? 'e.g. offered his biscuit to cousin' : 'What exactly did he do?', true)}
+    ${textWithMic('details', 'Details', d.details || '', kind === 'pos' ? `e.g. offered ${S.P.his} biscuit to cousin` : `What exactly did ${S.P.he} do?`, true)}
     ${kind === 'neg' ? `
       <label>Likely trigger<select name="trigger"><option value="">—</option>${TRIGGERS.map(x => `<option ${x === d.trigger ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></label>
       <fieldset><legend>How strong (1 mild – 5 intense)</legend><div class="rating">${[1, 2, 3, 4, 5].map(n => `<label><input type="radio" name="intensity" value="${n}" ${Number(d.intensity) === n ? 'checked' : ''}><span>${n}</span></label>`).join('')}</div></fieldset>
       <fieldset><legend>How we responded</legend><div class="chips">${RESPONSES.map(x => `<label class="chip"><input type="checkbox" name="responses" value="${esc(x)}" ${(d.responses || []).includes(x) ? 'checked' : ''}><span>${esc(x)}</span></label>`).join('')}</div></fieldset>
       <label>Outcome<select name="outcome"><option value="">—</option>${OUTCOMES.map(x => `<option ${x === d.outcome ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></label>
     ` : `
-      <fieldset><legend>How we responded</legend><div class="chips">${['Described what he did', 'Praised the effort', 'Hug / smile', 'Told the family', 'Thanked him'].map(x => `<label class="chip"><input type="checkbox" name="responses" value="${esc(x)}" ${(d.responses || []).includes(x) ? 'checked' : ''}><span>${esc(x)}</span></label>`).join('')}</div></fieldset>`}
+      <fieldset><legend>How we responded</legend><div class="chips">${[`Described what ${S.P.he} did`, 'Praised the effort', 'Hug / smile', 'Told the family', `Thanked ${S.P.him}`].map(x => `<label class="chip"><input type="checkbox" name="responses" value="${esc(x)}" ${(d.responses || []).includes(x) ? 'checked' : ''}><span>${esc(x)}</span></label>`).join('')}</div></fieldset>`}
     <div class="row two"><label>Time<input type="datetime-local" name="start" value="${toLocalInput(entry?.start || Date.now())}"></label>
     <label>Logged by<select name="by">${S.settings.caregivers.map(c => `<option ${c === (entry?.by || S.settings.me) ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></label></div>
     <div class="row actions">${entry ? `<button type="button" class="btn danger" data-act="delete" data-id="${entry.id}">Delete</button>` : ''}<button class="btn primary">Save</button></div>
@@ -657,7 +736,7 @@ async function openBehaviour(kind, entry = null) {
         responses: fd.getAll('responses'), outcome: fd.get('outcome') || '' }, note: '', createdAt: entry?.createdAt || Date.now() };
     await db.put(e);
     closeSheet();
-    toast(kind === 'pos' ? '💗 Noted — tell him what you noticed!' : 'Logged. Remember to reconnect after big feelings.');
+    toast(kind === 'pos' ? `💗 Noted — tell ${S.P.him} what you noticed!` : 'Logged. Remember to reconnect after big feelings.');
     route();
   });
 }
@@ -721,7 +800,7 @@ async function renderHealth() {
       <button class="hb c-health" data-act="form" data-type="doctor"><span>🩺</span>Doctor visit</button>
       <button class="hb c-health" data-act="goGrow" data-tab="vaccines"><span>💉</span>Vaccines</button>
     </div>
-    ${ongoing.length ? `<div class="label">Currently unwell</div>${ongoing.map(i => illnessCard(i, h, true)).join('')}` : `<p class="ok-note">🌈 No ongoing illness. If he falls sick, tap <b>🤒 Illness</b> to start tracking it.</p>`}
+    ${ongoing.length ? `<div class="label">Currently unwell</div>${ongoing.map(i => illnessCard(i, h, true)).join('')}` : `<p class="ok-note">🌈 No ongoing illness. If ${S.P.he} falls sick, tap <b>🤒 Illness</b> to start tracking it.</p>`}
     <label class="search"><span aria-hidden="true">🔍</span><input id="healthSearch" type="search" placeholder="Search medicines, doctors, symptoms…" value="${esc(S.healthQ)}" aria-label="Search health records"></label>
     <div class="seg">${tabs.map(([k, l]) => `<button data-act="healthTab" data-tab="${k}" aria-pressed="${S.healthTab === k}">${l}</button>`).join('')}</div>
     <div id="healthList">${list}</div>`;
@@ -787,10 +866,10 @@ async function openIllness(id) {
 // ------------------------------------------------------------------ MORE
 function renderMore() {
   const cards = [
-    ['routine', '🕒', 'Routine', 'Timetable for his age'], ['grow:milestones', '🎯', 'Milestones', 'Tick what he can do'],
+    ['routine', '🕒', 'Routine', `Timetable for ${S.P.his} age`], ['grow:milestones', '🎯', 'Milestones', `Tick what ${S.P.he} can do`],
     ['grow:memories', '✨', 'New things', 'Firsts & memories'], ['grow:trends', '📈', 'Trends', 'Sleep, food, play charts'],
-    ['grow:growth', '📏', 'Growth', 'Weight & height'], ['grow:foods', '🥕', 'Foods tried', 'Food diary & reactions'],
-    ['grow:vaccines', '💉', 'Vaccines', 'Schedule & dates'], ['guide', '📖', 'Guide', 'Parenting library'],
+    ['grow:physical', '📏', 'Physical growth', 'Monthly checks & WHO charts'], ['grow:foods', '🥕', 'Foods tried', 'Food diary & reactions'],
+    ['grow:vaccines', '💉', 'Vaccines', 'Government schedule'], ['guide', '📖', 'Guide', 'Parenting library'],
     ['settings', '⚙️', 'Settings', 'Profile, backup, buttons'],
   ];
   main().innerHTML = `<h2>More</h2>
@@ -822,7 +901,7 @@ async function renderRoutine() {
   main().innerHTML = `
     ${backBar()}
     <h2>${S.stage.emoji} ${esc(S.stage.name)} timetable</h2>
-    <p class="muted small">${custom ? '<b>Your customised version.</b>' : `Shifted to his usual wake-up time (${esc(S.settings.wake)}).`}</p>
+    <p class="muted small">${custom ? '<b>Your customised version.</b>' : `Shifted to ${S.P.his} usual wake-up time (${esc(S.settings.wake)}).`}</p>
     <div class="card targets"><div class="label">Daily targets for this age</div>
       <ul><li>🌙 Sleep ${tg.sleep[0]}–${tg.sleep[1]} h in 24 h${tg.naps[1] ? `, ${tg.naps[0]}–${tg.naps[1]} naps` : ''}</li>
       ${tg.meals ? `<li>🥣 ${tg.meals} meals${S.months < 24 ? ' + 1–2 snacks' : ' + 2 snacks'}</li>` : ''}
@@ -838,7 +917,7 @@ async function renderRoutine() {
     }).join('')}</ol>
     <div class="row"><button class="btn" data-act="editRoutine">✏️ Customise timetable</button>${custom ? '<button class="btn" data-act="resetRoutine">Reset to recommended</button>' : ''}</div>
     <h2>Growing-up roadmap</h2>
-    <p class="muted small">The app changes its timetable, targets, buttons, milestones and guidance automatically as he grows.</p>
+    <p class="muted small">The app changes its timetable, targets, buttons, milestones and guidance automatically as ${S.P.he} grows.</p>
     <ol class="roadmap">${STAGES.map(s => `<li class="${s === S.stage ? 'current' : s.to <= S.months ? 'past' : ''}">
       <b>${s.emoji} ${esc(s.name)}</b> <span class="muted">${ageRange(s)}</span>${s === S.stage ? ' <span class="badge now">now</span>' : ''}
       <div class="small muted">${esc(s.ei.goal)}</div></li>`).join('')}</ol>
@@ -854,7 +933,7 @@ async function openRoutineEditor() {
     <select class="rt-type" aria-label="Log type">${types.map(t => `<option value="${t.key}" ${t.key === x.type ? 'selected' : ''}>${t.icon} ${esc(t.label)}</option>`).join('')}</select>
     <input type="number" class="rt-d" value="${x.dur || ''}" placeholder="min" aria-label="Minutes"><button type="button" class="icon-btn" data-act="rmRowEl" aria-label="Remove">✕</button></div>`;
   openSheet(`<div class="sheet-hd"><h3>Customise timetable</h3><button class="icon-btn" data-act="close" aria-label="Close">✕</button></div>
-    <p class="muted small">Edit times, activities and durations. Saved for the ${esc(S.stage.name)} stage; when he moves to the next stage you get a fresh recommended timetable.</p>
+    <p class="muted small">Edit times, activities and durations. Saved for the ${esc(S.stage.name)} stage; when ${S.P.he} moves to the next stage you get a fresh recommended timetable.</p>
     <div id="rtrows">${r.map(x => row({ ...x, t: minToHm(x.min) })).join('')}</div>
     <template id="rtTpl">${row({ t: '12:00', label: '', type: 'play', dur: 30 })}</template>
     <div class="row actions"><button class="btn" data-act="addRow">＋ Add row</button><button class="btn primary" data-act="saveRoutine">Save</button></div>`, { focus: false });
@@ -874,21 +953,41 @@ async function renderHeart() {
   const pos = list.filter(e => e.data.kind === 'pos');
   const st = S.stage;
   const ratio = neg.length ? (pos.length / neg.length).toFixed(1) : null;
+  const row = eiRowFor(S.months);
+  const ageDays = (Date.now() - parseKey(S.settings.dob).getTime()) / 86400000;
+  const week = S.months < 37 ? Math.min(4, Math.floor((S.months % 1) * 4.35) + 1) : Math.floor((ageDays % 365.25) / 7) + 1;
+  const weekAct = row.acts[(week - 1) % row.acts.length];
+  const todayKey = dateKey();
+  const doneToday = (await db.byDate(todayKey)).filter(e => e.type === 'ei').map(e => e.data?.text);
+  const rowAge = r => r.m != null ? (r.m === 0 ? 'Birth–1 m' : r.m < 24 ? `${r.m} m` : `${r.m} m (${(r.m / 12).toFixed(1).replace('.0', '')} y)`) : `${r.y - 1}–${r.y} y`;
+  const groups = [['0–12 months', r => r.m != null && r.m <= 12], ['1–2 years (13–24 months)', r => r.m > 12 && r.m <= 24], ['2–3 years (25–36 months)', r => r.m > 24 && r.m <= 36], ['3–15 years (by year)', r => r.y != null]];
+  const roadmap = groups.map(([name, f]) => {
+    const rows = EI_ROADMAP.filter(f);
+    const hasCur = rows.includes(row);
+    return `<details class="card roadmap-ei" ${hasCur ? 'open' : ''}><summary><b>${name}</b>${hasCur ? ' <span class="badge now">now</span>' : ''}</summary>
+      <div class="ei-table" role="table"><div class="ei-row ei-head" role="row"><span>Age</span><span>Teach / develop</span><span>Activities</span></div>
+      ${rows.map(r => `<div class="ei-row ${r === row ? 'cur' : ''} ${(r.m != null ? r.m : r.y * 12) < Math.floor(S.months) && r !== row ? 'past' : ''}" role="row"><span class="ei-age">${esc(rowAge(r))}</span>
+        <span><b>${esc(r.focus)}</b><br><small class="muted">${esc(r.develops)}</small></span><span><small>${r.acts.map(esc).join(' · ')}</small></span></div>`).join('')}</div></details>`;
+  }).join('');
   main().innerHTML = `
     <h2>💛 Heart · feelings & behaviour</h2>
     <div class="row"><button class="btn primary grow" data-act="behaviour" data-kind="pos">💗 Kind moment</button><button class="btn grow" data-act="behaviour" data-kind="neg">🌋 Tough moment</button></div>
-    <section class="card ei"><div class="label">This stage's goal</div><h3>${esc(st.ei.goal)}</h3>
-      <div class="chips static">${st.ei.skills.map(s => `<span class="chip"><span>${esc(s)}</span></span>`).join('')}</div>
-      <details><summary class="small"><b>Activities to practise (${st.ei.activities.length})</b></summary><ul class="checklist">${st.ei.activities.map(a => `<li><button class="btn small" data-act="eidone" data-text="${esc(a)}">Did it</button> <span>${esc(a)}</span></li>`).join('')}</ul></details></section>
+    <section class="card ei week-card"><div class="label">This week · ${esc(rowAge(row))} · week ${week}</div><h3>${esc(row.focus)}</h3>
+      <p class="small muted">${esc(row.develops)}</p>
+      <div class="week-act"><span>🎯</span><b>${esc(weekAct)}</b><button class="btn small ${doneToday.includes(weekAct) ? '' : 'primary'}" data-act="eidone" data-text="${esc(weekAct)}" ${doneToday.includes(weekAct) ? 'disabled' : ''}>${doneToday.includes(weekAct) ? '✓ Done today' : 'Did it today'}</button></div>
+      <details><summary class="small"><b>More for this age (${st.ei.activities.length + row.acts.length})</b></summary><ul class="checklist">${[...row.acts, ...st.ei.activities].filter((a, i, arr) => arr.indexOf(a) === i).map(a => `<li><button class="btn small" data-act="eidone" data-text="${esc(a)}" ${doneToday.includes(a) ? 'disabled' : ''}>${doneToday.includes(a) ? '✓' : 'Did it'}</button> <span>${esc(a)}</span></li>`).join('')}</ul></details></section>
     <section class="card">${pairChart({ title: 'Last 14 days', data, names: ['Kind / positive', 'Challenging'] })}
       <p class="small">${ratio ? `Positive: <b>${pos.length}</b>, challenging: <b>${neg.length}</b> (≈${ratio} : 1). ` : `Positive moments noticed: <b>${pos.length}</b>. `}
       Notice and name many more good moments than you correct — what you pay attention to grows.</p></section>
     ${neg.length ? `<section class="card"><div class="label">Patterns</div>
       <p><b>Top triggers:</b> ${triggers.length ? triggers.slice(0, 4).map(([k, n]) => `${esc(k)} (${n})`).join(', ') : 'not recorded yet'}</p>
-      <p><b>What calmed him fastest:</b> ${worked.length ? worked.slice(0, 4).map(([k, n]) => `${esc(k)} (${n})`).join(', ') : 'log responses + outcome to learn this'}</p>
+      <p><b>What calmed ${S.P.him} fastest:</b> ${worked.length ? worked.slice(0, 4).map(([k, n]) => `${esc(k)} (${n})`).join(', ') : 'log responses + outcome to learn this'}</p>
       ${triggers[0] ? `<p class="small muted">${esc(triggerAdvice(triggers[0][0]))}</p>` : ''}</section>` : ''}
     <details class="card"><summary><b>Behaviour at this age</b></summary><ul>${st.behaviour.map(b => `<li>${esc(b)}</li>`).join('')}</ul>
       <button class="btn small" data-act="view" data-view="guide">Read the guides</button></details>
+    <h2>🗺️ Emotional-intelligence roadmap</h2>
+    <p class="muted small">What to teach at each age, month by month to 3 years and then year by year to 15. The highlighted row is ${S.P.his} age now; this week's practice above comes from it.</p>
+    ${roadmap}
     <h2>Recent</h2>${entryList(list.slice(0, 20), 'Nothing yet — start by noticing one kind moment today.')}`;
 }
 function triggerAdvice(t) {
@@ -905,8 +1004,9 @@ function triggerAdvice(t) {
 
 // ------------------------------------------------------------------ GROW
 async function renderGrow() {
-  const tabs = [['milestones', 'Milestones'], ['memories', 'New things'], ['trends', 'Trends'], ['growth', 'Growth'], ['foods', 'Foods'], ['vaccines', 'Vaccines']];
-  const body = await ({ milestones: growMilestones, trends: growTrends, growth: growGrowth, foods: growFoods, vaccines: growVaccines, memories: growMemories })[S.growTab]();
+  const tabs = [['milestones', 'Milestones'], ['physical', 'Physical growth'], ['memories', 'New things'], ['trends', 'Trends'], ['foods', 'Foods'], ['vaccines', 'Vaccines']];
+  if (S.growTab === 'growth') S.growTab = 'physical';
+  const body = await ({ milestones: growMilestones, trends: growTrends, physical: growPhysical, foods: growFoods, vaccines: growVaccines, memories: growMemories })[S.growTab]();
   main().innerHTML = `${backBar()}<div class="seg">${tabs.map(([k, l]) => `<button data-act="growTab" data-tab="${k}" aria-pressed="${S.growTab === k}">${l}</button>`).join('')}</div>${body}`;
 }
 
@@ -957,16 +1057,70 @@ async function growTrends() {
     ${barChart({ title: 'Screen time (min)', data: series(s => s.screenMin), unit: ' min', fmt: r })}`;
 }
 
-async function growGrowth() {
+async function growPhysical() {
+  const sex = S.settings.sex;
+  const m = S.months;
   const g = (await db.byType('growth')).sort((a, b) => a.start - b.start);
-  const pts = k => g.filter(e => e.data?.[k]).map(e => ({ label: fmtDateShort(e.date), x: e.start, value: e.data[k] }));
-  const teeth = await db.byType('tooth');
-  return `<button class="btn primary wide" data-act="form" data-type="growth">＋ Add weight / height</button>
-    ${lineChart({ title: 'Weight (kg)', points: pts('weight'), unit: ' kg' })}
-    ${lineChart({ title: 'Height / length (cm)', points: pts('height'), unit: ' cm' })}
-    ${S.months < 36 ? lineChart({ title: 'Head circumference (cm)', points: pts('head'), unit: ' cm' }) : ''}
-    <p class="muted small">Compare with the WHO growth charts in his health card at each paediatric visit — the trend over time matters more than one number.</p>
-    ${S.months < 36 ? `<p>🦷 Teeth logged: <b>${teeth.length}</b> <button class="btn small" data-act="form" data-type="tooth">＋ New tooth</button></p>` : ''}`;
+  const physState = await db.getKV('physical', {});
+  const monthsAt = ms => ageMonths(S.settings.dob, ms, Number(S.settings.premature) || 0);
+  const latest = k => [...g].reverse().find(e => e.data?.[k]);
+  const fmtAge = mo => mo < 24 ? `${Math.round(mo)} m` : `${Math.round(mo / 12 * 10) / 10} y`;
+
+  // 1) First-year month-by-month checks
+  const curM = Math.min(12, Math.max(1, Math.floor(m))); // his age in completed months
+  const monthBlock = row => {
+    const done = row.items.filter((_, i) => physState[`${row.m}:${i}`]).length;
+    return `<details class="card ms" ${row.m === curM && m <= 12.5 ? 'open' : ''}><summary><b>Month ${row.m}</b> <span class="muted">· ${done}/${row.items.length}</span>${row.m === curM && m <= 12.5 ? ' <span class="badge now">this month</span>' : ''}</summary>
+      <p class="tip-line">📈 ${esc(row.growth)}</p>
+      <ul class="checklist">${row.items.map((it, i) => { const k = `${row.m}:${i}`; return `<li><label class="check"><input type="checkbox" data-phys="${k}" ${physState[k] ? 'checked' : ''}> <span>${esc(it)}</span></label>${physState[k] ? `<span class="muted small ticked-date"> ✓ ${esc(fmtDateShort(physState[k]))}</span>` : ''}</li>`; }).join('')}</ul></details>`;
+  };
+  const firstYear = `<h3 class="sec-h">🍼 First year: month-by-month checks</h3>
+    ${m <= 12.5 ? MONTHLY_PHYSICAL.filter(r => r.m === curM).map(monthBlock).join('') : ''}
+    <details class="card"><summary><b>${m <= 12.5 ? 'All 12 months' : 'First-year checks (all 12 months)'}</b></summary>${MONTHLY_PHYSICAL.filter(r => !(m <= 12.5 && r.m === curM)).map(monthBlock).join('')}</details>`;
+
+  // 2) WHO comparison charts
+  const span = m < 24 ? [0, 24] : m < 60 ? [0, 60] : [Math.max(60, Math.floor(m) - 48), Math.min(228, Math.ceil(m) + 24)];
+  const chartFor = ind => {
+    const info = INDICATORS[ind];
+    const x1 = Math.min(span[1], info.maxMonth), x0 = Math.min(span[0], x1 - 12);
+    if (x1 <= x0) return '';
+    const xs = []; for (let x = x0; x <= x1; x += (x1 - x0) > 60 ? 3 : 1) xs.push(x);
+    const band = z => xs.map(x => whoValue(ind, sex, x, z));
+    const pts = g.filter(e => e.data?.[info.key]).map(e => ({ x: monthsAt(e.start), v: e.data[info.key], label: `${fmtDateShort(e.date)} (${fmtAge(monthsAt(e.start))})` })).filter(p => p.x >= x0 && p.x <= x1);
+    const last = latest(info.key);
+    let verdict = '<p class="muted small">No measurement yet — add one below.</p>';
+    if (last) {
+      const z = zScore(ind, sex, monthsAt(last.start), last.data[info.key]);
+      const [cls, txt] = zLabel(z);
+      verdict = z == null ? '' : `<p class="verdict"><span class="badge ${cls}">${cls === 'ok' ? '✓' : '!'} ${percentile(z)}th percentile</span> ${esc(last.data[info.key])} ${info.unit} on ${esc(fmtDateShort(last.date))} · ${esc(txt)}</p>`;
+    }
+    return growthChart({ title: `${info.label} (${info.unit}) — ${S.settings.name} vs WHO ${sex === 'girl' ? 'girls' : 'boys'}`, unit: info.unit, xs,
+      lo3: band(-3), lo2: band(-2), med: band(0), hi2: band(2), hi3: band(3), pts, xLabel: x => x < 24 ? `${Math.round(x)}m` : `${Math.round(x / 12)}y` }) + verdict;
+  };
+  const charts = `<h3 class="sec-h">📊 Compare with WHO standards</h3>
+    <button class="btn primary wide" data-act="form" data-type="growth">＋ Add weight / height / head</button>
+    ${chartFor('wfa')}${chartFor('hfa')}${m < 60 ? chartFor('hca') : ''}
+    <p class="muted small">Most healthy children are inside the darker band. Following their own curve steadily matters more than one reading. Weight-for-age charts stop at 10 years (WHO).</p>`;
+
+  // 3) Standard readings table (first year by month, then by year), with the child's nearest reading
+  const nearest = (k, mo) => { let best = null; for (const e of g) { if (!e.data?.[k]) continue; const d = Math.abs(monthsAt(e.start) - mo); if (d <= (mo < 24 ? 0.75 : 4) && (!best || d < best.d)) best = { d, v: e.data[k] }; } return best?.v; };
+  const cell = (ind, mo, k) => {
+    const med = whoValue(ind, sex, mo, 0); if (med == null) return ['—', ''];
+    const lo = whoValue(ind, sex, mo, -2), hi = whoValue(ind, sex, mo, 2);
+    const v = nearest(k, mo);
+    const z = v != null ? zScore(ind, sex, mo, v) : null;
+    const mark = v == null ? '' : `<b class="${Math.abs(z) <= 2 ? 'ok-t' : 'warn-t'}">${v}${Math.abs(z) <= 2 ? ' ✓' : ' !'}</b>`;
+    return [`${med.toFixed(1)}<br><small class="muted">${lo.toFixed(1)}–${hi.toFixed(1)}</small>`, mark];
+  };
+  const rowsAges = [...(m < 30 ? [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] : []), ...Array.from({ length: 15 }, (_, i) => (i + 1) * 12).filter(x => m < 30 ? x > 12 : true)];
+  const table = `<h3 class="sec-h">📋 Standard readings (WHO median, normal range)</h3>
+    <div class="tbl-wrap"><table class="std"><thead><tr><th>Age</th><th>Weight kg</th><th>${S.P.His}</th><th>Height cm</th><th>${S.P.His}</th>${m < 60 ? `<th>Head cm</th><th>${S.P.His}</th>` : ''}</tr></thead><tbody>
+    ${rowsAges.map(mo => { const w = cell('wfa', mo, 'weight'), h = cell('hfa', mo, 'height'), hc = cell('hca', mo, 'head');
+      return `<tr class="${Math.abs(mo - m) < (mo < 13 ? 0.5 : 6) ? 'now-row' : ''}"><td><b>${mo === 0 ? 'Birth' : mo < 13 ? mo + ' m' : mo / 12 + ' y'}</b></td><td>${w[0]}</td><td>${w[1]}</td><td>${h[0]}</td><td>${h[1]}</td>${m < 60 ? `<td>${hc[0]}</td><td>${hc[1]}</td>` : ''}</tr>`; }).join('')}
+    </tbody></table></div>
+    <p class="muted small">Normal range = WHO −2 SD to +2 SD (about the 2nd to 98th percentile) for ${sex === 'girl' ? 'girls' : 'boys'}. ✓ = ${S.P.his} reading near that age is in range.</p>`;
+  const teeth = S.months < 36 ? `<p>🦷 Teeth logged: <b>${(await db.byType('tooth')).length}</b> <button class="btn small" data-act="form" data-type="tooth">＋ New tooth</button></p>` : '';
+  return (m <= 15 ? firstYear + charts : charts) + table + teeth + (m > 15 ? firstYear : '');
 }
 
 async function growFoods() {
@@ -981,21 +1135,21 @@ async function growFoods() {
 async function growVaccines() {
   const state = await db.getKV('vaccines', {});
   const dob = parseKey(S.settings.dob);
-  return `<p class="warn">ⓘ Based on the Indian Academy of Pediatrics schedule. Schedules get updated — always follow your paediatrician's advice and the dates on his vaccination card.</p>
-    <ul class="vax">${VACCINES.map(v => {
+  return `<p class="ok-note">🇮🇳 <b>Government schedule (Universal Immunization Programme)</b> — these vaccines are given <b>free</b> at government hospitals, PHCs and anganwadi sessions. * JE only in districts where it is common. Always follow the dates on ${S.P.his} Mother & Child Protection (MCP) card.</p>
+    <ul class="vax">${UIP_VACCINES.map(v => {
       const due = new Date(dob); due.setDate(due.getDate() + Math.round(v.at * 30.4375));
-      const dk = dateKey(due), done = state[v.at];
+      const key = `uip:${v.at}`, dk = dateKey(due), done = state[key];
       const status = done ? ['ok', '✓ Given'] : dk < dateKey() ? ['high', '! Due / overdue'] : (due - Date.now()) < 45 * 86400000 ? ['now', 'Coming up'] : ['', 'Later'];
-      return `<li><label class="check"><input type="checkbox" data-vax="${v.at}" ${done ? 'checked' : ''}>
-        <span><b>${v.at < 1 ? 'Birth' : v.at < 24 ? (v.at < 4 ? Math.round(v.at * 4.345) + ' weeks' : v.at + ' months') : Math.round(v.at / 12 * 10) / 10 + ' years'}</b> — ${esc(v.name)}<br>
-        <span class="muted small">${done ? 'given ' + esc(fmtDateShort(done)) : 'due around ' + esc(fmtDateShort(dk))}</span></span></label>
+      return `<li><label class="check"><input type="checkbox" data-vax="${key}" ${done ? 'checked' : ''}>
+        <span><b>${esc(v.label)}</b> — ${esc(v.name)}<br><span class="muted small">${done ? 'given ' + esc(fmtDateShort(done)) : 'due around ' + esc(fmtDateShort(dk))}</span></span></label>
         <span class="badge ${status[0]}">${status[1]}</span></li>`;
-    }).join('')}</ul>`;
+    }).join('')}</ul>
+    <p class="muted small">Source: Ministry of Health & Family Welfare, National Immunization Schedule. Private clinics may suggest extra optional vaccines; those are not listed here.</p>`;
 }
 
 async function growMemories() {
   const list = (await db.byType('memory')).sort((a, b) => b.start - a.start);
-  return `<button class="btn primary wide" data-act="form" data-type="memory" data-first="1">✨ Add a new thing he did</button>
+  return `<button class="btn primary wide" data-act="form" data-type="memory" data-first="1">✨ Add a new thing ${S.P.he} did</button>
     ${list.length ? `<ul class="memories">${list.map(e => `<li data-act="edit" data-id="${e.id}"><div class="muted small">${esc(fmtDateLong(e.date))} · age ${esc(ageText(S.settings.dob, e.start))}${e.data?.area ? ` · ${esc(e.data.area)}` : ''}</div>
       ${e.data?.first ? '<span class="badge now">⭐ First</span> ' : ''}${esc(e.data?.text || e.note)}
       ${e.data?.photos?.length ? `<span class="thumbs">${e.data.photos.map(id => thumbHtml(id)).join('')}</span>` : ''}</li>`).join('')}</ul>` : '<p class="empty">First smile, first word, first step… add them here with a photo.</p>'}`;
@@ -1024,35 +1178,78 @@ async function renderGuide() {
     <p class="muted small">This guidance is general information drawn from WHO, AAP/AASM, CDC, IAP, the Gottman Institute and Harvard's Center on the Developing Child. It does not replace your paediatrician.</p>`;
 }
 
-// ------------------------------------------------------------------ SETTINGS
+// ------------------------------------------------------------------ SETTINGS (split into sections)
+const SETTINGS_SECTIONS = [
+  ['profile', '👶', 'Child profile', 'Name, birthday, boy/girl, wake-up time'],
+  ['children', '👨‍👩‍👧‍👦', 'Children', 'Add or switch between children'],
+  ['family', '👪', 'Family & voice', 'Caregivers, who is logging, voice language'],
+  ['display', '🎨', 'Look & theme', 'Light / dark mode, age theme'],
+  ['backup', '☁️', 'Online backup', 'Google Sheet & Drive'],
+  ['data', '💾', 'Files & data', 'Backup file, CSV, sample data, erase'],
+  ['install', '📲', 'Install app', 'Add to home screen'],
+  ['about', 'ℹ️', 'About', 'Privacy & sources'],
+];
+
 async function renderSettings() {
+  const tab = S.settingsTab;
+  if (!tab) {
+    main().innerHTML = `${backBar()}<h2>Settings</h2>
+      <section class="more-grid">${SETTINGS_SECTIONS.filter(([k]) => k !== 'install' || !isStandalone()).map(([k, i, t, d]) =>
+        `<button class="more-card" data-act="settingsTab" data-tab="${k}"><span>${i}</span><b>${t}</b><small>${d}</small></button>`).join('')}</section>`;
+    return;
+  }
+  const back = `<button class="back" data-act="settingsTab" data-tab="">‹ Settings</button>`;
   const s = S.settings;
-  const count = (await db.all()).length;
-  const cfg = await getConfig(), st = await getState(), pend = await pendingCount();
-  const keys = homeKeys();
-  main().innerHTML = `
-    ${backBar()}
-    <h2>Settings</h2>
-    ${!isStandalone() ? `<section class="card install-card"><div><b>📲 Install ${APP_NAME} as an app</b><br><small>Gets its own icon on the home screen and opens full screen like any other app.</small></div><button class="btn primary small" data-act="install">Install</button></section>` : ''}
-    <form id="settingsForm" class="card">
-      <div class="label">👶 Profile</div>
+  const title = SETTINGS_SECTIONS.find(x => x[0] === tab);
+  let body = '';
+  if (tab === 'profile') body = `<form id="profileForm" class="card">
       <label>Child's name<input name="name" value="${esc(s.name)}" required></label>
+      <fieldset><legend>Boy or girl (used for the wording in guidance and WHO growth charts)</legend><div class="chips">
+        ${[['boy', '👦 Boy'], ['girl', '👧 Girl']].map(([v, l]) => `<label class="chip"><input type="radio" name="sex" value="${v}" ${s.sex === v ? 'checked' : ''}><span>${l}</span></label>`).join('')}</div></fieldset>
       <div class="row two"><label>Date of birth<input type="date" name="dob" value="${esc(s.dob)}" max="${dateKey()}" required></label>
       <label>Usual wake-up<input type="time" name="wake" value="${esc(s.wake)}"></label></div>
       <label>Born early by (weeks) <span class="muted small">— corrected age is used until 2 years if 3+ weeks</span><input type="number" name="premature" min="0" max="16" value="${esc(s.premature || 0)}"></label>
+      <button class="btn primary">Save</button></form>`;
+  if (tab === 'children') body = `<section class="card"><ul class="kids">${S.children.map(c => `<li class="${c.id === S.child ? 'current' : ''}">
+      <span class="avatar small">${esc((c.name || '?')[0].toUpperCase())}</span><b>${esc(c.name || 'Child')}</b>${c.id === S.child ? '<span class="badge now">open now</span>' : `<button class="btn small" data-act="switchChild" data-id="${c.id}">Open</button>`}
+      ${c.id !== 'main' ? `<button class="icon-btn" data-act="removeChild" data-id="${c.id}" aria-label="Remove ${esc(c.name)}">🗑️</button>` : ''}</li>`).join('')}</ul>
+      <button class="btn primary wide" data-act="addChild">＋ Add another child</button>
+      <p class="muted small">Each child has their own logs, timetable, milestones, health records and theme. Tap the name at the top of any screen to switch.</p></section>`;
+  if (tab === 'family') body = `<form id="familyForm" class="card">
       <label>Caregivers (comma separated)<input name="caregivers" value="${esc(s.caregivers.join(', '))}"></label>
-      <div class="row two"><label>I am<select name="me">${s.caregivers.map(c => `<option ${c === s.me ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></label>
-      <label>Theme<select name="theme">${[['auto', 'Automatic'], ['light', 'Light'], ['dark', 'Dark']].map(([v, l]) => `<option value="${v}" ${v === s.theme ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
+      <label>I am<select name="me">${s.caregivers.map(c => `<option ${c === s.me ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></label>
       <label>Voice language<select name="voiceLang">${[['en-IN', 'English (India)'], ['ta-IN', 'Tamil'], ['hi-IN', 'Hindi'], ['en-US', 'English (US)']].map(([v, l]) => `<option value="${v}" ${v === s.voiceLang ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
-      <fieldset><legend>🏠 Home screen buttons (pick up to 8)</legend><div class="chips">${quickForAge().map(q => `<label class="chip"><input type="checkbox" name="home" value="${q.k}" ${keys.includes(q.k) ? 'checked' : ''}><span>${q.icon} ${esc(q.label)}</span></label>`).join('')}</div>
-        <p class="muted small">The rest stay under "More buttons".</p></fieldset>
-      <button class="btn primary">Save settings</button>
-    </form>
-    <form id="syncForm" class="card">
-      <div class="label">☁️ Online backup — your own Google Sheet</div>
-      <p class="small">Every entry (and photo) is copied to your Google Sheet / Drive automatically whenever the phone is online. When offline, changes wait safely and upload later. Deleted entries are only <i>marked</i> deleted in the sheet.</p>
-      <p class="small"><b>Status:</b> ${cfg.enabled ? (pend ? `${pend} change(s) waiting` : 'all backed up') : 'off'}${st.lastSync ? ` · last backup ${esc(new Date(st.lastSync).toLocaleString())}` : ''}${st.lastError ? `<br><span class="err-text">⚠ ${esc(st.lastError)}</span>` : ''}
-        ${cfg.enabled && st.photosUnsupported ? `<br><span class="err-text">📷 Photos are not being backed up yet — update the Apps Script to the new version (see steps below) and press Save & test.</span>` : ''}</p>
+      <button class="btn primary">Save</button></form>`;
+  if (tab === 'display') body = `<form id="displayForm" class="card">
+      <fieldset><legend>Light or dark</legend><div class="chips">${[['auto', '📱 Automatic'], ['light', '☀️ Light'], ['dark', '🌙 Dark']].map(([v, l]) => `<label class="chip"><input type="radio" name="theme" value="${v}" ${v === s.theme ? 'checked' : ''}><span>${l}</span></label>`).join('')}</div></fieldset>
+      <div class="theme-now"><span class="big-emoji">${S.theme.emoji}</span><div><b>${esc(S.theme.label)}: ${esc(S.theme.name)}</b><br><small>${esc(S.theme.about)}</small></div></div>
+      <p class="muted small">The colours change automatically every month until the first birthday, then with each age stage.</p>
+      <button class="btn primary">Save</button></form>`;
+  if (tab === 'backup') body = await backupSection();
+  if (tab === 'data') body = `<section class="card"><div class="label">Data on this phone for ${esc(s.name)}: ${(await db.all()).length} entries</div>
+      <div class="row wrap"><button class="btn" data-act="export">⬇️ Backup file</button><button class="btn" data-act="csv">⬇️ Export CSV</button>
+      <label class="btn">⬆️ Restore file<input type="file" id="importFile" accept="application/json" hidden></label></div>
+      <div class="row wrap"><button class="btn" data-act="demo">Load sample data</button><button class="btn danger" data-act="wipe">Erase this child's data</button></div></section>`;
+  if (tab === 'install') body = `<section class="card install-card"><div><b>📲 Install ${APP_NAME} as an app</b><br><small>Gets its own icon on the home screen and opens full screen like any other app.</small></div><button class="btn primary small" data-act="install">Install</button></section>`;
+  if (tab === 'about') body = `<section class="card small"><b>${APP_NAME}</b> is a personal, offline-first app. Data only leaves the phone if you turn on the online backup, and then it goes only to your own Google Sheet and Drive.
+      Voice typing uses your phone browser's built-in speech service. Growth charts use the WHO Child Growth Standards (0–5 years) and WHO Growth Reference 2007 (5–19 years). Vaccines follow India's Universal Immunization Programme. Guidance is based on WHO, AAP/AASM, CDC, IAP, the Gottman Institute and Harvard's Center on the Developing Child — always follow your paediatrician.</section>`;
+  main().innerHTML = `${back}<h2>${title[1]} ${title[2]}</h2>${body}`;
+  const onSave = (id, fn) => $(id)?.addEventListener('submit', async ev => { ev.preventDefault(); await fn(new FormData(ev.target)); await db.setKV('settings', S.settings); await saveChildrenList(); applyTheme(); await refreshAge(); toast('Saved ✓'); route(); });
+  onSave('#profileForm', fd => { S.settings = { ...S.settings, name: fd.get('name').trim(), sex: fd.get('sex') || 'boy', dob: fd.get('dob'), wake: fd.get('wake') || '06:30', premature: Number(fd.get('premature')) || 0 }; });
+  onSave('#familyForm', fd => {
+    const caregivers = String(fd.get('caregivers')).split(',').map(x => x.trim()).filter(Boolean);
+    S.settings = { ...S.settings, caregivers: caregivers.length ? caregivers : ['Parent'], me: caregivers.includes(fd.get('me')) ? fd.get('me') : caregivers[0], voiceLang: fd.get('voiceLang') || 'en-IN' };
+  });
+  onSave('#displayForm', fd => { S.settings = { ...S.settings, theme: fd.get('theme') || 'auto' }; });
+  $('#syncForm')?.addEventListener('submit', onSyncSubmit);
+}
+
+async function backupSection() {
+  const cfg = await getConfig(), st = await getState(), pend = await pendingCount();
+  return `<form id="syncForm" class="card">
+      <p class="small">Every entry (and photo) of every child is copied to your Google Sheet / Drive automatically whenever the phone is online. When offline, changes wait safely and upload later.</p>
+      <p class="small"><b>Status:</b> ${cfg.enabled ? (pend ? `${pend} change(s) waiting` : 'all backed up ✓') : 'off'}${st.lastSync ? ` · last backup ${esc(new Date(st.lastSync).toLocaleString())}` : ''}${st.lastError ? `<br><span class="err-text">⚠ ${esc(st.lastError)}</span>` : ''}
+        ${cfg.enabled && st.photosUnsupported ? `<br><span class="err-text">📷 Photos are not backed up yet — update the Apps Script (steps below) and press Save & test.</span>` : ''}</p>
       <label>Web app URL<input name="url" type="url" placeholder="https://script.google.com/macros/s/…/exec" value="${esc(cfg.url)}"></label>
       <label>Secret phrase (same as in the script)<input name="token" type="password" autocomplete="off" value="${esc(cfg.token)}"></label>
       <label class="check"><input type="checkbox" name="enabled" ${cfg.enabled ? 'checked' : ''}> Back up automatically</label>
@@ -1060,59 +1257,86 @@ async function renderSettings() {
         <button type="button" class="btn" data-act="syncAll" ${cfg.enabled ? '' : 'disabled'}>⬆️ Back up everything now</button>
         <button type="button" class="btn" data-act="syncRestore" ${cfg.enabled ? '' : 'disabled'}>⬇️ Restore from Google Sheet</button></div>
       <details><summary class="small">How to set it up / update it</summary><ol class="small">
-        <li>Open your backup Google Sheet (or create one).</li>
-        <li><b>Extensions → Apps Script</b>. Select all old code, delete it, and paste the code from <code>google-sheets-backup/Code.gs</code>.</li>
-        <li>Change <code>SECRET</code> to your own phrase and click Save.</li>
-        <li>First time: <b>Deploy → New deployment → Web app</b> (Execute as: Me, Who has access: Anyone). Updating: <b>Deploy → Manage deployments → ✏️ → Version: New version → Deploy</b>. Allow the permissions (Drive is needed for photos).</li>
-        <li>Paste the <code>/exec</code> URL and secret above, tick "Back up automatically" and press <b>Save & test</b>.</li></ol></details>
-    </form>
-    <section class="card"><div class="label">💾 Your data (${count} entries on this device)</div>
-      <div class="row wrap"><button class="btn" data-act="export">⬇️ Backup file</button><button class="btn" data-act="csv">⬇️ Export CSV</button>
-      <label class="btn">⬆️ Restore file<input type="file" id="importFile" accept="application/json" hidden></label></div>
-      <div class="row wrap"><button class="btn" data-act="demo">Load sample data</button><button class="btn danger" data-act="wipe">Erase everything</button></div></section>
-    <section class="card small muted"><b>About.</b> ${APP_NAME} is a personal, offline-first app. Data only leaves the phone if you turn on the online backup, and then it goes only to your own Google Sheet and Drive.
-      Voice typing uses your phone browser's built-in speech service. Guidance is based on WHO, AAP/AASM, CDC, IAP, the Gottman Institute and Harvard's Center on the Developing Child; always follow your paediatrician.</section>`;
-  $('#syncForm').addEventListener('submit', async ev => {
-    ev.preventDefault();
-    const fd = new FormData(ev.target);
-    const url = String(fd.get('url')).trim().replace(/\/macros\/u\/\d+\/s\//, '/macros/s/').replace(/[?#].*$/, '');
-    const next = { url, token: String(fd.get('token')).trim(), enabled: fd.get('enabled') === 'on' };
-    if (next.enabled) {
-      if (/docs\.google\.com\/spreadsheets/.test(url)) return alert('This is the Google Sheet link. Paste the Apps Script Web app URL (ends in /exec) instead.');
-      if (/\/edit$|\/home\/projects\//.test(url)) return alert('This is the script EDITOR link. In Apps Script use Deploy → Manage deployments and copy the "Web app" URL ending in /exec.');
-      if (/\/dev$/.test(url)) return alert('This is the test (/dev) link. Use the deployed Web app URL that ends in /exec.');
-      if (!/^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec$/.test(url)) return alert('Please paste the Apps Script Web app URL. It looks like https://script.google.com/macros/s/…/exec');
+        <li>Open your backup Google Sheet → <b>Extensions → Apps Script</b>.</li>
+        <li>Select all old code, delete it, paste the code from <code>google-sheets-backup/Code.gs</code>, put your secret phrase in <code>SECRET</code>, Save.</li>
+        <li>Choose <b>setup</b> in the function list → <b>▶ Run</b> → allow all permissions.</li>
+        <li><b>Deploy → Manage deployments → ✏️</b> → Who has access: <b>Anyone</b> → Version: <b>New version</b> → Deploy. (First time: Deploy → New deployment → Web app.)</li>
+        <li>Paste the <code>/exec</code> URL and secret here and press <b>Save & test</b>.</li></ol></details>
+    </form>`;
+}
+
+async function onSyncSubmit(ev) {
+  ev.preventDefault();
+  const fd = new FormData(ev.target);
+  const url = String(fd.get('url')).trim().replace(/\/macros\/u\/\d+\/s\//, '/macros/s/').replace(/[?#].*$/, '');
+  const next = { url, token: String(fd.get('token')).trim(), enabled: fd.get('enabled') === 'on' };
+  if (next.enabled) {
+    if (/docs\.google\.com\/spreadsheets/.test(url)) return alert('This is the Google Sheet link. Paste the Apps Script Web app URL (ends in /exec) instead.');
+    if (/\/edit$|\/home\/projects\//.test(url)) return alert('This is the script EDITOR link. In Apps Script use Deploy → Manage deployments and copy the "Web app" URL ending in /exec.');
+    if (/\/dev$/.test(url)) return alert('This is the test (/dev) link. Use the deployed Web app URL that ends in /exec.');
+    if (!/^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec$/.test(url)) return alert('Please paste the Apps Script Web app URL. It looks like https://script.google.com/macros/s/…/exec');
+  }
+  await setConfig(next);
+  if (!next.enabled) { toast('Online backup turned off'); return route(); }
+  toast('Testing connection…');
+  try {
+    const r = await testConnection(next);
+    const st2 = await getState();
+    if (r.count > 0 && !st2.lastSync && confirm(`Your sheet "${r.sheet}" already has ${r.count} entries. Restore them to this phone first? (Recommended on a new phone)`)) {
+      const n = await restoreFromSheet();
+      S.children = await childrenList();
+      await selectChild(S.child, false);
+      toast(`✓ Restored ${n} entries`);
     }
-    await setConfig(next);
-    if (!next.enabled) { toast('Online backup turned off'); return route(); }
-    toast('Testing connection…');
-    try {
-      const r = await testConnection(next);
-      const st2 = await getState();
-      if (r.count > 0 && !st2.lastSync && confirm(`Your sheet "${r.sheet}" already has ${r.count} entries. Restore them to this phone first? (Recommended on a new phone)`)) {
-        const n = await restoreFromSheet();
-        S.settings = { ...DEFAULT_SETTINGS, ...(await db.getKV('settings')) }; applyTheme(); await refreshAge();
-        toast(`✓ Restored ${n} entries`);
-      }
-      toast(`✓ Connected to "${r.sheet}". Backing up…`);
-      await syncNow({ silent: false });
-      toast(r.photos ? '✓ Backup complete (with photos)' : '✓ Backup complete. Update the script to also back up photos.');
-    } catch (err) { alert('Could not connect: ' + err.message); }
-    route();
-  });
-  $('#settingsForm').addEventListener('submit', async ev => {
+    toast(`✓ Connected to "${r.sheet}". Backing up…`);
+    await syncNow({ silent: false });
+    toast(r.photos ? '✓ Backup complete (with photos)' : '✓ Backup complete. Update the script to also back up photos.');
+  } catch (err) { alert('Could not connect: ' + err.message); }
+  route();
+}
+
+// Add / switch / remove children
+function openChildren() {
+  openSheet(`<div class="sheet-hd"><h3>👨‍👩‍👧‍👦 Children</h3><button class="icon-btn" data-act="close" aria-label="Close">✕</button></div>
+    <ul class="kids">${S.children.map(c => `<li class="${c.id === S.child ? 'current' : ''}" data-act="switchChild" data-id="${c.id}">
+      <span class="avatar small">${esc((c.name || '?')[0].toUpperCase())}</span><b>${esc(c.name || 'Child')}</b>${c.id === S.child ? '<span class="badge now">open</span>' : '<span class="muted">Open ›</span>'}</li>`).join('')}</ul>
+    <button class="btn primary wide" data-act="addChild">＋ Add another child</button>`, { focus: false });
+}
+
+function openAddChild() {
+  openSheet(`<form id="childForm"><div class="sheet-hd"><h3>＋ Add a child</h3><button type="button" class="icon-btn" data-act="close" aria-label="Close">✕</button></div>
+    <label>Name<input name="name" required></label>
+    <fieldset><legend>Boy or girl</legend><div class="chips">${[['boy', '👦 Boy'], ['girl', '👧 Girl']].map(([v, l], i) => `<label class="chip"><input type="radio" name="sex" value="${v}" ${i === 0 ? 'checked' : ''}><span>${l}</span></label>`).join('')}</div></fieldset>
+    <div class="row two"><label>Date of birth<input type="date" name="dob" required max="${dateKey()}"></label><label>Usual wake-up<input type="time" name="wake" value="06:30"></label></div>
+    <label>Born early by (weeks)<input type="number" name="premature" value="0" min="0" max="16"></label>
+    <div class="row actions"><button class="btn primary">Add child</button></div></form>`, { focus: false });
+  $('#childForm').addEventListener('submit', async ev => {
     ev.preventDefault();
     const fd = new FormData(ev.target);
-    const caregivers = String(fd.get('caregivers')).split(',').map(x => x.trim()).filter(Boolean);
-    const home = fd.getAll('home');
-    if (home.length > 8) return alert(`Please pick at most 8 home buttons (you picked ${home.length}).`);
-    S.settings = { ...S.settings, name: fd.get('name').trim(), dob: fd.get('dob'), premature: Number(fd.get('premature')) || 0, wake: fd.get('wake') || '06:30',
-      caregivers: caregivers.length ? caregivers : ['Parent'], me: caregivers.includes(fd.get('me')) ? fd.get('me') : caregivers[0], theme: fd.get('theme'),
-      voiceLang: fd.get('voiceLang') || 'en-IN', home: home.length ? home : null };
-    await db.setKV('settings', S.settings);
-    applyTheme(); await refreshAge();
-    toast('Settings saved'); S.view = 'home'; route();
+    const id = 'c' + uid();
+    const settings = { ...DEFAULT_SETTINGS, caregivers: S.settings.caregivers, me: S.settings.me, voiceLang: S.settings.voiceLang, theme: S.settings.theme,
+      name: fd.get('name').trim(), sex: fd.get('sex') || 'boy', dob: fd.get('dob'), wake: fd.get('wake') || '06:30', premature: Number(fd.get('premature')) || 0 };
+    S.children = [...S.children, { id, name: settings.name }];
+    await mainDb.setKV('children', S.children);
+    useDb(childDbName(id));
+    await db.setKV('settings', settings);
+    await db.setKV('lastStage', stageFor(ageMonths(settings.dob, Date.now(), settings.premature)).id);
+    closeSheet();
+    await selectChild(id);
+    toast(`👶 ${settings.name} added`);
   });
+}
+
+async function removeChild(id) {
+  const c = S.children.find(x => x.id === id);
+  if (!c || id === 'main') return;
+  if (!confirm(`Remove ${c.name || 'this child'} and all their logs from this phone? (Anything already backed up stays in your Google Sheet.)`)) return;
+  if (prompt('Type DELETE to confirm') !== 'DELETE') return;
+  S.children = S.children.filter(x => x.id !== id);
+  await mainDb.setKV('children', S.children);
+  await deleteDatabase(childDbName(id));
+  if (S.child === id) await selectChild('main', false);
+  toast('Removed'); route();
 }
 
 function renderOnboarding() {
@@ -1123,6 +1347,7 @@ function renderOnboarding() {
     <p>Your child's day, health and growth in one place — with a timetable, milestones and guidance that grow with them from baby to teen.</p></div>
     <form id="obForm" class="card">
       <label>Child's name<input name="name" required placeholder="e.g. Aadhi"></label>
+      <fieldset><legend>Boy or girl</legend><div class="chips">${[['boy', '👦 Boy'], ['girl', '👧 Girl']].map(([v, l], i) => `<label class="chip"><input type="radio" name="sex" value="${v}" ${i === 0 ? 'checked' : ''}><span>${l}</span></label>`).join('')}</div></fieldset>
       <label>Date of birth<input type="date" name="dob" required max="${dateKey()}"></label>
       <div class="row two"><label>Usual wake-up<input type="time" name="wake" value="06:30"></label>
       <label>Born early (weeks)<input type="number" name="premature" value="0" min="0" max="16"></label></div>
@@ -1134,8 +1359,10 @@ function renderOnboarding() {
     const fd = new FormData(ev.target);
     const me = fd.get('me').trim() || 'Amma';
     const caregivers = [...new Set([me, ...DEFAULT_SETTINGS.caregivers])];
-    S.settings = { ...DEFAULT_SETTINGS, name: fd.get('name').trim(), dob: fd.get('dob'), premature: Number(fd.get('premature')) || 0, wake: fd.get('wake') || '06:30', me, caregivers };
+    S.settings = { ...DEFAULT_SETTINGS, name: fd.get('name').trim(), sex: fd.get('sex') || 'boy', dob: fd.get('dob'), premature: Number(fd.get('premature')) || 0, wake: fd.get('wake') || '06:30', me, caregivers };
     await db.setKV('settings', S.settings);
+    S.children = [{ id: S.child, name: S.settings.name }, ...S.children.filter(c => c.id !== S.child)];
+    await mainDb.setKV('children', S.children);
     await refreshAge();
     await db.setKV('lastStage', S.stage.id);
     document.body.classList.remove('onboarding');
@@ -1215,6 +1442,11 @@ async function loadDemo() {
     if (i % 3 === 0) add('behaviour', d, '18:00', null, { kind: 'neg', b: 'crying', trigger: 'Tired / overdue nap', intensity: 3, responses: ['Stayed calm & close', 'Named the feeling'], outcome: 'Calmed in 2–10 min' });
   }
   const d3 = addDays(dateKey(), -3), d2 = addDays(dateKey(), -2), d1 = addDays(dateKey(), -1);
+  // growth readings (roughly on the WHO median curve) for the charts
+  [[0, 3.3, 50, 34.5], [1, 4.4, 54.5, 37], [2, 5.6, 58.4, 39], [4, 7.0, 63.9, 41.5], [6, 7.9, 67.6, 43.3], [9, 8.9, 72, 45]].forEach(([mo, w, h, hc]) => {
+    const d = parseKey(S.settings.dob); d.setDate(d.getDate() + Math.round(mo * 30.4375));
+    if (d.getTime() <= Date.now()) add('growth', dateKey(d), '10:00', null, { weight: w, height: h, head: hc });
+  });
   add('memory', d2, '17:30', null, { text: 'Clapped his hands for the first time while we sang a rhyme!', area: 'Movement', first: true });
   const ill = add('illness', d3, '09:00', null, { title: 'Cold & mild fever', symptoms: ['Fever', 'Cold / runny nose'] });
   add('sick', d3, '09:00', null, { temp: 100.6, symptoms: ['Fever'], illness: ill.id });
@@ -1250,7 +1482,7 @@ async function toggleTimer(type) {
     await db.put(running);
     const mins = entryMinutes(running);
     route();
-    if (type === 'meal') { toast(`🥣 Eating time: ${fmtDur(mins)} — add what he ate`); return openForm('meal', running, { focusFoods: true, noFocus: true }); }
+    if (type === 'meal') { toast(`🥣 Eating time: ${fmtDur(mins)} — add what ${S.P.he} ate`); return openForm('meal', running, { focusFoods: true, noFocus: true }); }
     return toast(`${t.icon} ${t.label}: ${fmtDur(mins)} (${fmtTime(running.start)}–${fmtTime(running.end)})`, [
       ['Undo', async () => { running.end = null; await db.put(running); route(); }],
       ['Add details', () => openForm(type, running)]]);
@@ -1271,12 +1503,24 @@ async function toggleTimer(type) {
 }
 
 // ------------------------------------------------------------------ events
+let busy = false;
 async function onClick(ev) {
   const el = ev.target.closest('[data-act]');
   if (!el) { if (ev.target.id === 'sheet') closeSheet(); return; }
   const a = el.dataset.act;
+  // ignore a second tap while a timer/counter is still saving (prevents double timers)
+  if (['toggle', 'quick', 'giveMed', 'eidone', 'vSave'].includes(a)) {
+    if (busy) return;
+    busy = true;
+    try { await handleClick(el, a, ev); } finally { setTimeout(() => { busy = false; }, 350); }
+    return;
+  }
+  await handleClick(el, a, ev);
+}
+
+async function handleClick(el, a, ev) {
   switch (a) {
-    case 'view': S.view = el.dataset.view; closeSheet(); route(); break;
+    case 'view': S.view = el.dataset.view; if (S.view === 'settings') S.settingsTab = null; closeSheet(); route(); break;
     case 'goGrow': S.view = 'grow'; S.growTab = el.dataset.tab; closeSheet(); route(); break;
     case 'close': closeSheet(); break;
     case 'openPicker': openPicker(); break;
@@ -1317,7 +1561,12 @@ async function onClick(ev) {
       toast('💛 Lovely! Logged.'); route(); break;
     }
     case 'ackStage': await db.setKV('lastStage', S.stage.id); route(); break;
-    case 'moreBtns': S.moreOpen = !S.moreOpen; route(); break;
+    case 'homeCat': S.homeCat = el.dataset.cat; route(); break;
+    case 'settingsTab': S.settingsTab = el.dataset.tab || null; route(); break;
+    case 'children': openChildren(); break;
+    case 'addChild': openAddChild(); break;
+    case 'switchChild': closeSheet(); await selectChild(el.dataset.id); toast(`Switched to ${S.settings?.name || 'child'}`); break;
+    case 'removeChild': await removeChild(el.dataset.id); break;
     case 'homeTab': S.homeTab = el.dataset.tab; route(); break;
     case 'healthTab': S.healthTab = el.dataset.tab; route(); break;
     case 'install': doInstall(); break;
@@ -1382,7 +1631,7 @@ async function onClick(ev) {
       const when = prompt('Recovered on (YYYY-MM-DD)', dateKey());
       if (!when) break;
       i.data = { ...i.data, recovered: when };
-      await db.put(i); toast('🌈 So glad he is better!'); route(); break;
+      await db.put(i); toast(`🌈 So glad ${S.P.he} is better!`); route(); break;
     }
     case 'illnessView': openIllness(el.dataset.id); break;
     case 'day': S.diaryDate = addDays(S.diaryDate, Number(el.dataset.delta)); if (S.diaryDate > dateKey()) S.diaryDate = dateKey(); route(); break;
@@ -1432,12 +1681,21 @@ async function onChange(ev) {
     }
     t.value = '';
   }
-  if (t.dataset.ms) {
-    const st = await db.getKV('milestones', {});
-    if (t.checked) st[t.dataset.ms] = dateKey(); else delete st[t.dataset.ms];
-    await db.setKV('milestones', st);
-    if (t.checked) toast('🎉 Milestone ticked!');
-    route();
+  if (t.dataset.ms || t.dataset.phys) {
+    // update in place: no re-render, so the page never jumps
+    const key = t.dataset.ms ? 'milestones' : 'physical', id = t.dataset.ms || t.dataset.phys;
+    const st = await db.getKV(key, {});
+    if (t.checked) st[id] = dateKey(); else delete st[id];
+    await db.setKV(key, st);
+    const li = t.closest('li');
+    li?.querySelector('.ticked-date')?.remove();
+    if (t.checked) { li?.insertAdjacentHTML('beforeend', `<span class="muted small ticked-date"> ✓ ${esc(fmtDateShort(dateKey()))}</span>`); toast('🎉 Ticked!'); }
+    const det = t.closest('details');
+    const cnt = det?.querySelector(':scope > summary .muted');
+    if (cnt) { const boxes = det.querySelectorAll('input[type=checkbox]'); cnt.textContent = ` · ${[...boxes].filter(b => b.checked).length}/${boxes.length}`; }
+    const sec = t.closest('.ms-focus');
+    const badge = sec?.querySelector('.badge');
+    if (badge && /\d+\/\d+/.test(badge.textContent)) { const [d, n] = badge.textContent.match(/\d+/g).map(Number); badge.textContent = `${d + (t.checked ? 1 : -1)}/${n} ✓`; }
   }
   if (t.dataset.vax) {
     const st = await db.getKV('vaccines', {});
