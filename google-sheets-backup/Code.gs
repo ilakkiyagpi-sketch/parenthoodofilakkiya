@@ -5,6 +5,8 @@
  *  1. Open your backup Google Sheet → Extensions → Apps Script.
  *  2. Select ALL the old code (Ctrl+A), delete it, and paste this whole file.
  *  3. Put your own secret phrase in SECRET below (keep the quotes). Save.
+ *     Then pick "setup" in the function list at the top and press ▶ Run. Allow all permissions
+ *     (Advanced → Go to project → Allow). This is needed once, and again after updates.
  *  4. First time:   Deploy → New deployment → Web app (Execute as: Me, Who has access: Anyone).
  *     Updating:     Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy.
  *     Google will ask for permission again because photos are now saved to Google Drive.
@@ -47,6 +49,19 @@ function doPost(e) {
   } catch (err) {
     return out({ ok: false, error: String(err) });
   }
+}
+
+/**
+ * Run this ONCE from the editor (choose "setup" in the function list, then ▶ Run)
+ * to give the script permission for Sheets and Drive and create everything it needs.
+ */
+function setup() {
+  sheet('Entries', HEADERS);
+  sheet('AppData', ['key', 'value_json', 'updated_at']);
+  sheet('Photos', PHOTO_HEADERS);
+  sheet('Log', ['time', 'added', 'updated', 'deleted']);
+  const folder = photoFolder();
+  Logger.log('All set! Photos folder: ' + folder.getUrl() + '. Now Deploy → Manage deployments → Edit → New version → Deploy.');
 }
 
 function doGet() {

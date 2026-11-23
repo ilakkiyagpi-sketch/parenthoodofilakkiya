@@ -22,13 +22,19 @@ export async function pendingCount() {
 }
 
 async function call(cfg, payload) {
-  const res = await fetch(cfg.url, {
-    method: 'POST',
-    // text/plain avoids a CORS preflight, which Apps Script does not support
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify({ token: cfg.token, ...payload }),
-    redirect: 'follow',
-  });
+  let res;
+  try {
+    res = await fetch(cfg.url, {
+      method: 'POST',
+      // text/plain avoids a CORS preflight, which Apps Script does not support
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ token: cfg.token, ...payload }),
+      redirect: 'follow',
+    });
+  } catch (err) {
+    if (!navigator.onLine) throw new Error('No internet connection — will retry when online');
+    throw new Error('Google did not let the app read the reply (usually the script still needs permission). Fix: in Apps Script choose "setup" → ▶ Run → allow all permissions; then Deploy → Manage deployments → ✏️ → Who has access: Anyone → Version: New version → Deploy.');
+  }
   if (!res.ok) throw new Error(`Server replied ${res.status}`);
   const out = await res.json().catch(() => { throw new Error('Google returned a page instead of the backup reply. Check: (1) the URL ends in /exec, (2) Deploy → Manage deployments → Edit: "Who has access" = Anyone, then Deploy a New version, (3) open the URL in an Incognito window — it should say "backup is running"'); });
   if (!out.ok) throw new Error(out.error || 'Backup failed');
