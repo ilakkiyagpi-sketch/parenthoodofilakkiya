@@ -1,25 +1,28 @@
 /**
- * Parenthood Arena — Google Sheets backup receiver.
+ * Happy Parenthood — Google Sheets backup receiver (version 2: with photo backup).
  *
- * SETUP (one time, ~5 minutes):
- *  1. Create a new Google Sheet (e.g. "Parenthood Arena Backup").
- *  2. Extensions → Apps Script. Delete the sample code and paste this whole file.
- *  3. Change SECRET below to your own long random phrase. Save.
- *  4. Deploy → New deployment → type "Web app".
- *       Execute as: Me      Who has access: Anyone
- *     Click Deploy, allow the permissions, and copy the Web app URL (ends with /exec).
- *  5. In the app: Settings → Online backup → paste the URL and the same SECRET → "Save & test".
+ * SETUP / UPDATE:
+ *  1. Open your backup Google Sheet → Extensions → Apps Script.
+ *  2. Select ALL the old code (Ctrl+A), delete it, and paste this whole file.
+ *  3. Put your own secret phrase in SECRET below (keep the quotes). Save.
+ *  4. First time:   Deploy → New deployment → Web app (Execute as: Me, Who has access: Anyone).
+ *     Updating:     Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy.
+ *     Google will ask for permission again because photos are now saved to Google Drive.
+ *  5. In the app: Settings → Online backup → Save & test.
  *
- * Sheets created automatically:
+ * Tabs created automatically:
  *  - Entries : one row per log entry (readable columns + full JSON for restoring)
  *  - AppData : settings, milestones, vaccines, foods, custom timetables
+ *  - Photos  : one row per photo, with a link to the file in Google Drive
  *  - Log     : a line for every backup received
- * Deleted entries are NOT removed from the sheet; they are marked deleted = TRUE,
- * so nothing is ever lost.
+ * Photos go to the Drive folder "Happy Parenthood Photos".
+ * Deleted entries are NOT removed from the sheet; they are marked deleted = TRUE.
  */
 const SECRET = 'change-this-to-your-own-secret-phrase';
 
-const HEADERS = ['id', 'date', 'start', 'end', 'duration_min', 'type', 'activity', 'details', 'note', 'logged_by', 'deleted', 'updated_at', 'json'];
+const HEADERS = ['id', 'date', 'start', 'end', 'duration_min', 'type', 'activity', 'details', 'note', 'logged_by', 'deleted', 'updated_at', 'json', 'photos'];
+const PHOTO_HEADERS = ['id', 'file_id', 'url', 'saved_at'];
+const PHOTO_FOLDER = 'Happy Parenthood Photos';
 
 function doPost(e) {
   try {
@@ -28,7 +31,7 @@ function doPost(e) {
     if (body.action === 'ping') {
       const ss = SpreadsheetApp.getActiveSpreadsheet();
       const en = ss.getSheetByName('Entries');
-      return out({ ok: true, sheet: ss.getName(), count: en ? Math.max(0, en.getLastRow() - 1) : 0 });
+      return out({ ok: true, sheet: ss.getName(), count: en ? Math.max(0, en.getLastRow() - 1) : 0, photos: true });
     }
     if (body.action === 'export') return out(exportAll());
     const lock = LockService.getScriptLock();
@@ -36,6 +39,7 @@ function doPost(e) {
     try {
       if (body.action === 'save') return out(saveRows(body.rows || [], body.deletes || []));
       if (body.action === 'saveKV') return out(saveKV(body.kv || {}));
+      if (body.action === 'photo') return out(savePhoto(body));
       return out({ ok: false, error: 'Unknown action' });
     } finally {
       lock.releaseLock();
@@ -46,7 +50,7 @@ function doPost(e) {
 }
 
 function doGet() {
-  return out({ ok: true, message: 'Parenthood Arena backup is running.' });
+  return out({ ok: true, message: 'Happy Parenthood backup is running.' });
 }
 
 function out(obj) {
@@ -58,8 +62,11 @@ function sheet(name, headers) {
   let sh = ss.getSheetByName(name);
   if (!sh) {
     sh = ss.insertSheet(name);
-    sh.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold');
     sh.setFrozenRows(1);
+  }
+  // create or extend the header row (older sheets get the new "photos" column)
+  if (sh.getLastColumn() < headers.length || sh.getLastRow() === 0) {
+    sh.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold');
   }
   return sh;
 }
@@ -73,7 +80,8 @@ function saveRows(rows, deletes) {
   const append = [];
   let updated = 0;
   rows.forEach(r => {
-    const values = [r.id, r.date, r.start, r.end, r.duration, r.type, r.activity, r.details, r.note, r.by, false, new Date(r.updatedAt || Date.now()), JSON.stringify(r.entry)];
+    const values = [r.id, r.date, r.start, r.end, r.duration, r.type, r.activity, r.details, r.note, r.by, false,
+      new Date(r.updatedAt || Date.now()), JSON.stringify(r.entry), r.photos || ''];
     if (index[r.id]) { sh.getRange(index[r.id], 1, 1, values.length).setValues([values]); updated++; }
     else { append.push(values); index[r.id] = -1; }
   });
@@ -100,6 +108,27 @@ function saveKV(kv) {
   return { ok: true };
 }
 
+function photoFolder() {
+  const it = DriveApp.getFoldersByName(PHOTO_FOLDER);
+  return it.hasNext() ? it.next() : DriveApp.createFolder(PHOTO_FOLDER);
+}
+
+function savePhoto(body) {
+  const sh = sheet('Photos', PHOTO_HEADERS);
+  const last = sh.getLastRow();
+  if (last > 1) {
+    const rows = sh.getRange(2, 1, last - 1, 3).getValues();
+    for (let i = 0; i < rows.length; i++) {
+      if (String(rows[i][0]) === body.id) return { ok: true, fileId: rows[i][1], url: rows[i][2] }; // already saved
+    }
+  }
+  const blob = Utilities.newBlob(Utilities.base64Decode(body.data), body.mime || 'image/jpeg', body.id + '.jpg');
+  const file = photoFolder().createFile(blob);
+  const url = file.getUrl();
+  sh.appendRow([body.id, file.getId(), url, new Date()]);
+  return { ok: true, fileId: file.getId(), url: url };
+}
+
 function exportAll() {
   const sh = sheet('Entries', HEADERS);
   const last = sh.getLastRow();
@@ -114,5 +143,8 @@ function exportAll() {
   const kvLast = kvSh.getLastRow();
   const kv = {};
   if (kvLast > 1) kvSh.getRange(2, 1, kvLast - 1, 2).getValues().forEach(r => { try { kv[r[0]] = JSON.parse(r[1]); } catch (e) {} });
-  return { ok: true, entries: entries, kv: kv };
+  const phSh = sheet('Photos', PHOTO_HEADERS);
+  const phLast = phSh.getLastRow();
+  const photos = phLast > 1 ? phSh.getRange(2, 1, phLast - 1, 3).getValues().map(r => ({ id: String(r[0]), fileId: r[1], url: r[2] })) : [];
+  return { ok: true, entries: entries, kv: kv, photos: photos };
 }

@@ -317,3 +317,27 @@ export const VACCINES = [
   { at: 120, name: 'Tdap (10–12 years)' },
   { at: 192, name: 'Td (16–18 years)' },
 ];
+
+// How to gently encourage each area, per milestone checkpoint (shown in "This month").
+export const MILESTONE_TIPS = {
+  9: { social: 'Play peek-a-boo and copy his faces; call his name from different sides of the room.', language: 'Babble back as if chatting; say "up?" before you lift him and wait for his arms.', cognitive: 'Hide a toy under a cloth while he watches; give two spoons or blocks to bang together.', movement: 'Lots of floor time; place toys just out of reach to encourage crawling and sitting up on his own.' },
+  12: { social: 'Play pat-a-cake and "so big" with actions every day.', language: 'Wave bye-bye to everyone; use "Amma/Appa" often; name things he looks at.', cognitive: 'Give a cup and blocks to drop in and take out; hide toys in a box with a lid.', movement: 'Let him pull up on a sturdy sofa; place toys along it so he cruises. Offer small soft food pieces for pincer grasp.' },
+  15: { social: 'Play side by side with other babies; hug a soft toy together.', language: 'Name objects and wait for him to look; ask "Where is the ball?"', cognitive: 'Give real-life objects (cup, spoon, brush) and show their use.', movement: 'Hold both hands and walk together; push toys help him practise steps.' },
+  18: { social: 'Let him help you — wiping, carrying a cloth; praise "you helped!".', language: 'Read picture books and pause so he can say or point; expand his words ("ball" → "big red ball").', cognitive: 'Pretend play: feed a doll, talk on a toy phone.', movement: 'Give crayons and paper; let him climb safely on and off low furniture; offer a spoon at meals.' },
+  24: { social: 'Talk about feelings in books: "He is sad, he fell down."', language: 'Use two-word phrases yourself ("more water", "big truck") and point to body parts in songs.', cognitive: 'Toys with buttons and knobs; simple shape sorters.', movement: 'Kick a ball together, run at the park, practise steps holding a hand.' },
+  30: { social: 'Arrange short playdates; teach simple turn-taking ("my turn, your turn").', language: 'Ask "what is he doing?" with pictures; use "I/me/you" clearly.', cognitive: 'Two-step instructions: "Pick up the cup and give it to Appa." Name colours during play.', movement: 'Jumping games ("jump like a frog"), opening jars, turning book pages.' },
+  36: { social: 'Practise short separations with a goodbye ritual; join group play.', language: 'Answer his "why?" questions patiently and ask him questions back.', cognitive: 'Draw circles together; talk about safety ("hot — don\'t touch").', movement: 'Threading big beads, dressing up, using a child fork.' },
+  48: { social: 'Pretend play (shop, doctor, teacher); give him small helper jobs.', language: 'At dinner ask "what did you do today?"; sing and recite rhymes.', cognitive: 'Read and ask "what happens next?"; draw people together.', movement: 'Catch big balls, pour water from a small jug, button practice.' },
+  60: { social: 'Board games with turns and rules; simple chores like matching socks.', language: 'Let him retell stories; play rhyming games.', cognitive: 'Count real things, spot letters on signs, write his name together.', movement: 'Hopping games, buttons, cutting with child scissors.' },
+  84: { social: 'Talk about friends and feelings at bedtime.', language: 'Daily reading together; let him read to you.', cognitive: 'Maths in daily life (shopping, cooking).', movement: 'Cycling, shoelaces, dressing independently.' },
+  120: { social: 'Practise losing gracefully in games; role-play solving conflicts.', language: 'Chapter books; writing short notes or a diary.', cognitive: 'Weekly planner for homework.', movement: 'Regular sport he enjoys.' },
+  156: { social: 'Discuss peer pressure and online kindness.', cognitive: 'Let him set and review his own goals.' },
+  180: { social: 'Talk about values; encourage volunteering.', cognitive: 'Career conversations and independent projects.' },
+};
+
+// The checkpoint he should already have passed, and the one he is working towards.
+export function milestoneFocus(months) {
+  const passed = [...MILESTONES].reverse().find(c => c.at <= months + 0.5) || null;
+  const next = MILESTONES.find(c => c.at > months + 0.5) || null;
+  return { passed, next };
+}

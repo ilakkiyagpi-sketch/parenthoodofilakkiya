@@ -1,17 +1,22 @@
-# Parenthood Arena 👶 → 🧑‍🎓
+# Happy Parenthood 👶 → 🧑‍🎓
 
-A personal, offline-first parenting app that tracks **every part of a child's day** and **adapts itself as the child grows** from 0 to 15+ years. It works like a phone app (installable PWA) and needs no server, account or build step.
+A personal, offline-first parenting app that tracks **every part of a child's day**, their **health**, and their **growth**, and **adapts itself as the child grows** from 0 to 15+ years. It installs on the phone as its own app (PWA) and needs no server, account or build step.
+
+**Open it:** https://ilakkiyagpi-sketch.github.io/parenthoodofilakkiya/
 
 ## What it does
 
 | Area | Features |
 |---|---|
-| **Today** | One-tap logging (Pee +1, Poop, Food, Feed, Nap/Sleep timers, Woke up, Learning, Play, Walk, Bath, Kind act). Live timers. Tiles comparing today with age-appropriate targets (sleep, naps, meals, milk feeds, pee count, outdoor time, learning, screen time, behaviour). "Next in routine", today's emotional-intelligence activity, and a daily parenting tip. |
-| **Diary** | Any day's full log with summary; edit or delete any entry; add past entries. |
-| **Routine** | Recommended timetable for the current age stage, shifted to the child's usual wake-up time. Shows ✓ when an activity was logged and highlights what's on now. Fully customisable. Growing-up roadmap of all stages. |
-| **Heart** | Emotional intelligence and behaviour: the stage's EI goal, skills and activities. Logs positive behaviour (kindness, sharing, empathy…) and challenging moments using the ABC method (trigger → behaviour → how we responded → outcome). 14-day chart, top triggers, and which responses calmed him fastest. |
-| **Grow** | Milestone checklists (9 m → 15 y), trend charts (7/14/30 days), weight/height/head growth charts, food diary (every food tried, first date, reactions), vaccination schedule (IAP-based), and memories / "firsts". |
-| **Guide** | Stage overview (development, feeding, learning, EI) and a library: Gottman emotion coaching, Harvard serve-and-return, kindness, tantrums, positive discipline, sleep, feeding, screens, potty training, study habits, parent self-care. |
+| **Home** | 🎤 **Tell me what happened**: speak (or type) a sentence such as "He ate 4 spoons of ragi at 8, napped from 11 to 12:30 and peed twice". The app turns it into separate log entries for you to check and save. Below that are **8 big one-tap buttons** (tap once to start a timer, tap again to stop; pee/poop count +1), with the rest under "More buttons". You can choose which 8 in Settings. Then today at a glance, plus three small tabs: **Today's log**, **Summary** (age-based targets) and **This month** (milestones to work on, with ideas; new things he did; the feelings activity; tip; next routine item). |
+| **Diary** | Any day's full log; edit, delete or add past entries. |
+| **Health** | Track an illness from start to recovery, with a temperature chart, symptoms, **prescriptions** (doctor, clinic, diagnosis, each medicine with dose, how often, days, before/after food, plus a **photo of the prescription**), **"Gave now"** buttons that show when each medicine was last given and when the next dose is due, doctor visits and vaccines. Everything is searchable ("saline", "Dr. Priya", "cough"…). |
+| **Heart** | Emotional intelligence: the stage goal and activities, logging of kind and challenging moments, triggers, and what calms him. |
+| **More** | Routine/timetable, **Milestones** (with a 💡 idea for each area), **New things** (daily firsts with photos), Trends, Growth, Foods tried, Vaccines, Guide, Settings, Install. |
+
+**Photos:** add photos to any entry (meals, prescriptions, memories, illnesses…). They are shrunk on the phone to about 100 KB and backed up to a Google Drive folder.
+
+**Voice typing:** every text box has a 🎤 button. Speech recognition is done by the phone browser's built-in service (Chrome on Android works best; English, Tamil and Hindi can be chosen in Settings). Only English sentences are turned into structured entries; anything else is saved as a note.
 
 ### Logged details
 Wake-up (mood) · night sleep (how he settled, night wake-ups, quality) · naps · breastfeeds (side, duration) · bottle (type, ml) · **meals with every food + quantity + unit** (tsp / tbsp / ml / g / bowl / katori / piece…), appetite, self-feeding, reactions · water · pee (count) · poop (consistency) · potty practice · bath / oil massage · teeth brushing · morning learning (activity, details, attention) · story books · homework · exam scores · play (indoor/outdoor, type, with whom) · floor/crawl time · evening walk · sport · screen time · hobbies · chores · growth · medicine · illness · new teeth · doctor visits · mood · bonding time · gratitude · child's journal · memories. Every entry records **who** logged it (Amma, Appa, Paati, Thatha…).
@@ -31,6 +36,10 @@ Every time it opens, the app calculates the child's age (corrected age for prema
 | Young Teen | 12 y + | Self-awareness, purpose, relationships |
 
 Each stage changes: the **timetable**, **daily targets**, **which log types appear** (e.g. breastfeeding and crawl time fade out; potty practice, homework, exam scores, sport, journal appear), **options in forms** (play types, learning activities, feelings vocabulary), **behaviours tracked**, **milestones**, **guide articles** and **daily tips**. When a new stage begins, a "New stage unlocked" card explains what changed.
+
+## Install on the phone (own icon, works offline)
+- **Android (Chrome):** open the link above, then tap **📲 Install** in the app (or ⋮ menu → *Install app*).
+- **iPhone (Safari):** Share → *Add to Home Screen*.
 
 ## Run it
 
@@ -64,8 +73,10 @@ On **Today**, tap **Nap**, **Night sleep**, **Eating**, **Bath**, **Play**, **Wa
 - Both parents can back up to the same sheet. Use **Restore from Google Sheet** to pull the other parent's entries onto your phone.
 - Extra offline copies: **Settings → Backup (JSON)** and **Export CSV**.
 
-### Setting up the Google Sheet backup (5 minutes, free)
-1. Create a new Google Sheet, e.g. "Parenthood Arena Backup".
+### Setting up (or updating) the Google Sheet backup (5 minutes, free)
+> **Already set up?** The script was updated for photo backup. Paste the new `Code.gs` and redeploy as a **new version** (Deploy → Manage deployments → ✏️ → Version: New version). Google will ask for permission again, because photos are now saved to Drive. Your existing URL stays the same.
+
+1. Create a new Google Sheet, e.g. "Happy Parenthood Backup".
 2. In the sheet: **Extensions → Apps Script**. Delete the sample code and paste the whole of [`google-sheets-backup/Code.gs`](google-sheets-backup/Code.gs).
 3. Change `SECRET` at the top to your own long phrase, then **Save**.
 4. **Deploy → New deployment →** type **Web app**. *Execute as:* **Me**. *Who has access:* **Anyone**. Click **Deploy** and allow the permissions. (Google may warn that the app is unverified, because it is your own script. Choose *Advanced → Go to project*.)
@@ -84,7 +95,9 @@ js/stages.js          age stages: targets, timetables, EI, milestones, vaccines
 js/guide.js           parenting library + daily tips
 js/charts.js          small accessible SVG charts
 js/db.js              IndexedDB storage (+ change queue)
-js/sync.js            automatic Google Sheets backup
+js/sync.js            automatic Google Sheets + Drive backup
+js/voice.js           speech-to-text + sentence → log entries
+js/photos.js          photo compression & display
 google-sheets-backup/Code.gs   paste into your sheet's Apps Script
 sw.js, manifest       offline + install
 ```

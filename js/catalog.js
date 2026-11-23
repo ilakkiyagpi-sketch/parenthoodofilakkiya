@@ -2,6 +2,8 @@
 // during which it is shown, so the app grows with the child automatically.
 // Field kinds: text, number, select, chips (multi-select), foods, textarea, check, rating
 
+export const SYMPTOMS = ['Fever', 'Cold / runny nose', 'Cough', 'Vomiting', 'Loose motion', 'Constipation', 'Rash', 'Ear pain', 'Teething', 'Not eating', 'Breathing difficulty', 'Very sleepy / dull'];
+export const MED_FREQ = ['Once a day', 'Twice a day', '3 times a day', '4 times a day', 'Every 6 hours', 'Every 8 hours', 'At night', 'Only when needed (SOS)'];
 export const FOOD_UNITS = ['tsp', 'tbsp', 'ml', 'g', 'small bowl', 'cup', 'piece', 'slice', 'handful', 'katori'];
 
 export const LOG_TYPES = [
@@ -104,17 +106,42 @@ export const LOG_TYPES = [
       { k: 'weight', label: 'Weight', kind: 'number', unit: 'kg', step: '0.01' },
       { k: 'height', label: 'Height / length', kind: 'number', unit: 'cm', step: '0.1' },
       { k: 'head', label: 'Head circumference', kind: 'number', unit: 'cm', step: '0.1', max: 36 }] },
-  { key: 'medicine', label: 'Medicine / supplement', icon: '💊', group: 'Health', timed: false,
-    fields: [{ k: 'name', label: 'Name', kind: 'text' }, { k: 'dose', label: 'Dose', kind: 'text' }] },
-  { key: 'sick', label: 'Illness / symptom', icon: '🤒', group: 'Health', timed: false,
+  { key: 'illness', label: 'Illness', icon: '🤒', group: 'Health', timed: false,
+    fields: [
+      { k: 'title', label: 'What is it? (e.g. Cold & fever)', kind: 'text' },
+      { k: 'symptoms', label: 'Symptoms', kind: 'chips', options: SYMPTOMS },
+      { k: 'diagnosis', label: "Doctor's diagnosis", kind: 'text' },
+      { k: 'recovered', label: 'Recovered on (leave empty while still sick)', kind: 'date' },
+      { k: 'notes', label: 'Notes', kind: 'textarea' }] },
+  { key: 'sick', label: 'Temperature / symptoms', icon: '🌡️', group: 'Health', timed: false,
     fields: [
       { k: 'temp', label: 'Temperature', kind: 'number', unit: '°F', step: '0.1' },
-      { k: 'symptoms', label: 'Symptoms', kind: 'chips', options: ['Fever', 'Cold / runny nose', 'Cough', 'Vomiting', 'Loose motion', 'Rash', 'Ear pain', 'Teething', 'Not eating'] },
-      { k: 'action', label: 'What we did / doctor advice', kind: 'textarea' }] },
+      { k: 'symptoms', label: 'Symptoms', kind: 'chips', options: SYMPTOMS },
+      { k: 'illness', label: 'Part of which illness', kind: 'illness' },
+      { k: 'action', label: 'What we did', kind: 'textarea' }] },
+  { key: 'medicine', label: 'Medicine given', icon: '💊', group: 'Health', timed: false,
+    fields: [
+      { k: 'name', label: 'Medicine', kind: 'text', list: 'medlist' },
+      { k: 'dose', label: 'Dose (e.g. 2.5 ml, 1 drop)', kind: 'text' },
+      { k: 'illness', label: 'For which illness', kind: 'illness' }] },
+  { key: 'prescription', label: 'Prescription', icon: '📄', group: 'Health', timed: false,
+    fields: [
+      { k: 'doctor', label: 'Doctor', kind: 'text', list: 'doclist' },
+      { k: 'clinic', label: 'Hospital / clinic', kind: 'text' },
+      { k: 'diagnosis', label: 'Diagnosis / reason', kind: 'text' },
+      { k: 'meds', label: 'Medicines prescribed', kind: 'meds' },
+      { k: 'advice', label: 'Advice / instructions', kind: 'textarea' },
+      { k: 'nextVisit', label: 'Next visit / review date', kind: 'date' },
+      { k: 'illness', label: 'For which illness', kind: 'illness' }] },
   { key: 'tooth', label: 'New tooth', icon: '🦷', group: 'Health', timed: false, max: 36,
     fields: [{ k: 'which', label: 'Which tooth', kind: 'text' }] },
   { key: 'doctor', label: 'Doctor visit', icon: '🩺', group: 'Health', timed: false,
-    fields: [{ k: 'reason', label: 'Reason', kind: 'text' }, { k: 'advice', label: 'Advice given', kind: 'textarea' }] },
+    fields: [
+      { k: 'reason', label: 'Reason (check-up, vaccine, illness…)', kind: 'text' },
+      { k: 'doctor', label: 'Doctor', kind: 'text', list: 'doclist' },
+      { k: 'advice', label: 'What the doctor said', kind: 'textarea' },
+      { k: 'nextVisit', label: 'Next visit date', kind: 'date' },
+      { k: 'illness', label: 'Related illness', kind: 'illness' }] },
 
   // ---------- Feelings & memories ----------
   { key: 'mood', label: 'Mood check', icon: '🙂', group: 'Feelings', timed: false,
@@ -129,8 +156,13 @@ export const LOG_TYPES = [
     fields: [{ k: 'text', label: 'Today he was thankful for…', kind: 'textarea' }] },
   { key: 'journal', label: 'Child journal', icon: '📓', group: 'Feelings', timed: false, min: 96,
     fields: [{ k: 'text', label: 'Entry (his own words)', kind: 'textarea' }] },
-  { key: 'memory', label: 'Memory / first', icon: '⭐', group: 'Feelings', timed: false,
-    fields: [{ k: 'first', label: 'This is a "first"', kind: 'check' }, { k: 'text', label: 'What happened', kind: 'textarea' }] },
+  { key: 'memory', label: 'New thing / memory', icon: '✨', group: 'Feelings', timed: false,
+    fields: [
+      { k: 'text', label: 'What did he do? (e.g. clapped, said "amma", stood alone)', kind: 'textarea' },
+      { k: 'area', label: 'Area', kind: 'select', options: ['Movement', 'Language / words', 'Social & feelings', 'Thinking / play', 'Eating', 'Self-care', 'Other'] },
+      { k: 'first', label: 'This is a "first" ⭐', kind: 'check' }] },
+  { key: 'note', label: 'Quick note', icon: '📝', group: 'Feelings', timed: false,
+    fields: [{ k: 'text', label: 'Note', kind: 'textarea' }] },
 ];
 
 // Options that change with age. Resolved by fieldOptions(type, field, months).

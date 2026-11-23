@@ -16,7 +16,9 @@ export async function getState() { return db.getKV('syncState', { lastSync: null
 
 export async function pendingCount() {
   const dirty = await db.getKV('dirty', {});
-  return Object.keys(dirty).length + ((await db.getKV('kvDirty', 0)) ? 1 : 0);
+  const st = await getState();
+  const photos = st.photosUnsupported ? 0 : (await db.photosToUpload()).length;
+  return Object.keys(dirty).length + photos + ((await db.getKV('kvDirty', 0)) ? 1 : 0);
 }
 
 async function call(cfg, payload) {
@@ -40,6 +42,20 @@ export async function syncNow({ silent = true } = {}) {
   if (running) return { skipped: 'busy' };
   running = true; onStatus('syncing');
   try {
+    // 1) photos first (to a Google Drive folder), so entry rows can include their links
+    let st = await getState();
+    if (!st.photosUnsupported) {
+      for (const p of await db.photosToUpload()) {
+        try {
+          const r = await call(cfg, { action: 'photo', id: p.id, mime: 'image/jpeg', data: p.data.split(',')[1] });
+          await db.updatePhoto(p.id, { driveId: r.fileId, driveUrl: r.url });
+        } catch (err) {
+          if (/Unknown action/i.test(err.message)) { await db.setKV('syncState', { ...st, photosUnsupported: true }); break; }
+          throw err;
+        }
+      }
+    }
+    // 2) entries
     const dirty = await db.getKV('dirty', {});
     const ids = Object.keys(dirty);
     let sent = 0;
@@ -49,7 +65,7 @@ export async function syncNow({ silent = true } = {}) {
       for (const id of chunk) {
         if (dirty[id].op === 'del') { deletes.push(id); continue; }
         const e = await db.get(id);
-        if (e) rows.push(rowBuilder(e)); else deletes.push(id);
+        if (e) rows.push(await rowBuilder(e)); else deletes.push(id);
       }
       await call(cfg, { action: 'save', rows, deletes });
       sent += chunk.length;
@@ -64,7 +80,8 @@ export async function syncNow({ silent = true } = {}) {
       await call(cfg, { action: 'saveKV', kv });
       if ((await db.getKV('kvDirty', 0)) === kvDirty) await db.setKV('kvDirty', 0);
     }
-    await db.setKV('syncState', { lastSync: Date.now(), lastError: null, lastSent: sent });
+    st = await getState();
+    await db.setKV('syncState', { ...st, lastSync: Date.now(), lastError: null, lastSent: sent });
     return { ok: true, sent };
   } catch (err) {
     await db.setKV('syncState', { ...(await getState()), lastError: err.message, lastErrorAt: Date.now() });
@@ -76,7 +93,10 @@ export async function syncNow({ silent = true } = {}) {
 }
 
 export async function testConnection(cfg) {
-  return call(cfg, { action: 'ping' });
+  const r = await call(cfg, { action: 'ping' });
+  // a fresh test re-checks whether the script supports photo backup
+  await db.setKV('syncState', { ...(await getState()), photosUnsupported: !r.photos });
+  return r;
 }
 
 // Download everything from the sheet (for a new phone or after data loss)
@@ -86,6 +106,10 @@ export async function restoreFromSheet() {
   const entries = (out.entries || []).filter(e => e && e.id);
   await db.bulkPut(entries, false);
   for (const [k, v] of Object.entries(out.kv || {})) if (!LOCAL_KV.has(k)) await db.setKV(k, v);
+  // photo links (the pictures themselves stay in Google Drive)
+  for (const ph of out.photos || []) {
+    if (!(await db.getPhoto(ph.id))) await db.putPhoto({ id: ph.id, driveId: ph.fileId, driveUrl: ph.url, createdAt: Date.now() });
+  }
   await db.setKV('kvDirty', 0);
   return entries.length;
 }
