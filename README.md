@@ -16,7 +16,7 @@ A personal, offline-first parenting app that tracks **every part of a child's da
 
 **Several children:** tap the child's name at the top to switch, or add a child. Each child has their own logs, theme, timetable, milestones and health records. Boy/girl changes the wording (he/she) and the WHO chart used.
 
-**Age themes:** the colours and header art change every month until the first birthday (Newborn Snuggles → First Smiles → … → Little Crawler → Babble & Wave), then with each stage (Little Walker, Busy Toddler, Little Artist, Early Learner, Growing Explorer, Young Teen).
+**Age themes:** the colours and the full-screen background pictures change every month until the first birthday (Newborn Snuggles → First Smiles → … → Little Crawler → Babble & Wave), then with each stage (Little Walker, Busy Toddler, Little Artist, Early Learner, Growing Explorer, Young Teen).
 
 **Growth vs WHO:** weight, height and head circumference are plotted on the WHO Child Growth Standards (0–5 years) and WHO Growth Reference 2007 (5–19 years), with the percentile and a plain-language verdict. Data comes from WHO's official `anthro` / `anthroplus` tables.
 
@@ -71,14 +71,23 @@ On **Today**, tap **Nap**, **Night sleep**, **Eating**, **Bath**, **Play**, **Wa
 - After stopping **Eating**, the form opens so you can add what he ate and how much.
 - Every action shows **Undo** and **Add details** for a few seconds.
 
-## Your data & online backup (Google Sheets)
-- Data is stored on the phone (IndexedDB), so the app works fully offline.
-- **Automatic online backup to your own Google Sheet:** after a one-time setup (below), every change is uploaded automatically whenever the phone is online. That happens when the app opens, a few seconds after each change, when the internet comes back, and every 5 minutes. When offline, changes wait in a queue; the ☁️ badge in the header shows `✓` (all backed up), a number (changes waiting) or `⚠` (problem).
-- Deleting an entry in the app only **marks** it deleted in the sheet, so nothing is ever lost there.
-- **New phone:** set up the backup with the same URL and secret. The app offers to restore everything from the sheet first.
-- Both parents can back up to the same sheet. Use **Restore from Google Sheet** to pull the other parent's entries onto your phone.
-- Extra offline copies: **Settings → Backup (JSON)** and **Export CSV**.
+## Your data & backup
 
+### Google Drive (recommended): "Sign in with Google"
+Tap ☁️ at the top, then **Sign in with Google**. Every child's logs, settings and photos are saved in a **"Happy Parenthood Backup"** folder in that Gmail account's Google Drive. The folder holds one small file per child per month, plus a Photos folder.
+- **Two phones, one family:** sign in with the same Gmail on another phone and both stay in sync. New entries, edits and deletions flow both ways.
+- **New phone:** install the app, add the child (any name), sign in, and everything comes back.
+- **Privacy:** the app asks only for Google's `drive.file` permission, so it can see only the files it created.
+- **Sign-in time limit:** a web app's Google sign-in lasts about an hour. When ☁️ shows **Tap to sync**, tap it once. Changes are kept safely on the phone until then.
+
+**One-time setup (owner of the app, about 10 minutes).** Google requires every app to be registered:
+1. Open https://console.cloud.google.com and create a project called *Happy Parenthood*.
+2. Go to **APIs & Services → Library** and enable **Google Drive API**.
+3. Go to **Google Auth Platform → Branding**: enter the app name and your email. Under **Audience**, choose *External*, then press **Publish app**. Only the non-sensitive `drive.file` scope is used, so no Google review is needed.
+4. Go to **Clients → Create client** and choose *Web application*. Under **Authorized JavaScript origins**, add `https://ilakkiyagpi-sketch.github.io`.
+5. Put the Client ID in `js/config.js` (`GOOGLE_CLIENT_ID`), or paste it once in the app under *Settings → Online backup*.
+
+### Google Sheet (optional, advanced)
 ### Setting up (or updating) the Google Sheet backup (5 minutes, free)
 > **Already set up?** The script was updated for photo backup. Paste the new `Code.gs` and redeploy as a **new version** (Deploy → Manage deployments → ✏️ → Version: New version). Google will ask for permission again, because photos are now saved to Drive. Your existing URL stays the same.
 

@@ -5,7 +5,11 @@
 const MAIN_DB = 'parenthood';
 const VERSION = 2;
 // kv keys that are local-only and never uploaded
-export const LOCAL_KV = new Set(['dirty', 'kvDirty', 'sync', 'syncState', 'lastStage', 'installDismissed']);
+export const LOCAL_KV = new Set(['dirty', 'kvDirty', 'sync', 'syncState', 'lastStage', 'installDismissed', 'driveDirty', 'driveKvDirty', 'drive', 'driveState', 'driveSeen', 'driveFiles']);
+
+// Which backups are switched on (each keeps its own queue of changes)
+const backends = { sheet: false, drive: false };
+export function setBackends(b) { Object.assign(backends, b); }
 
 function makeDb(DB_NAME) {
 let dbp;
@@ -46,12 +50,12 @@ return {
   name: DB_NAME,
   async put(entry) {
     entry.updatedAt = Date.now();
-    await tx(['entries', 'kv'], 'readwrite', async s => { s.entries.put(entry); await markDirty(s.kv, [entry.id], 'put'); });
+    await tx(['entries', 'kv'], 'readwrite', async s => { s.entries.put(entry); await markDirty(s.kv, [item(entry)], 'put'); });
     changed();
     return entry;
   },
   async del(id) {
-    await tx(['entries', 'kv'], 'readwrite', async s => { s.entries.delete(id); await markDirty(s.kv, [id], 'del'); });
+    await tx(['entries', 'kv'], 'readwrite', async s => { const old = await reqP(s.entries.get(id)); s.entries.delete(id); await markDirty(s.kv, [{ id, month: old?.date?.slice(0, 7) }], 'del'); });
     changed();
   },
   async get(id) { return tx('entries', 'readonly', s => reqP(s.get(id))); },
@@ -61,7 +65,7 @@ return {
   async byType(type) { return tx('entries', 'readonly', s => reqP(s.index('type').getAll(type))); },
   async getKV(key, fallback = null) { const v = await tx('kv', 'readonly', s => reqP(s.get(key))); return v === undefined || v === null ? fallback : v; },
   async setKV(key, value) {
-    await tx('kv', 'readwrite', s => { s.put(value, key); if (!LOCAL_KV.has(key)) s.put(Date.now(), 'kvDirty'); });
+    await tx('kv', 'readwrite', s => { s.put(value, key); if (!LOCAL_KV.has(key)) { s.put(Date.now(), 'kvDirty'); s.put(Date.now(), 'driveKvDirty'); } });
     if (!LOCAL_KV.has(key)) changed();
   },
   async allKV() {
@@ -80,7 +84,7 @@ return {
   async bulkPut(entries, markAsChanged = true) {
     await tx(['entries', 'kv'], 'readwrite', async s => {
       entries.forEach(e => s.entries.put(e));
-      if (markAsChanged) await markDirty(s.kv, entries.map(e => e.id), 'put');
+      if (markAsChanged) await markDirty(s.kv, entries.map(item), 'put');
     });
     if (markAsChanged) changed();
   },
@@ -92,9 +96,12 @@ return {
   async updatePhoto(id, patch) {
     await tx('photos', 'readwrite', async s => { const p = await reqP(s.get(id)); if (p) s.put({ ...p, ...patch }); });
   },
+  // changes that came FROM the cloud: stored without being queued for upload again
+  async delQuiet(ids) { await tx('entries', 'readwrite', s => { ids.forEach(id => s.delete(id)); }); },
+  async setKVQuiet(key, value) { await tx('kv', 'readwrite', s => { s.put(value, key); }); },
   async markAllDirty() {
     const all = await this.all();
-    await tx(['kv'], 'readwrite', async s => { await markDirty(s.kv, all.map(e => e.id), 'put'); s.kv.put(Date.now(), 'kvDirty'); });
+    await tx(['kv'], 'readwrite', async s => { await markDirty(s.kv, all.map(item), 'put'); s.kv.put(Date.now(), 'kvDirty'); s.kv.put(Date.now(), 'driveKvDirty'); });
     return all.length;
   },
 };
@@ -102,12 +109,22 @@ return {
 
 const reqP = r => new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
 
-// Record changed entry ids (value = change time) inside the same transaction
-async function markDirty(kvStore, ids, op) {
-  const dirty = (await reqP(kvStore.get('dirty'))) || {};
+const item = e => ({ id: e.id, month: e.date?.slice(0, 7) });
+// Record changes inside the same transaction:
+//  - Google Sheet backup: changed entry ids
+//  - Google Drive backup: changed months (+ deleted ids so deletions sync to other phones)
+async function markDirty(kvStore, items, op) {
   const now = Date.now();
-  ids.forEach(id => { dirty[id] = { op, at: now }; });
-  kvStore.put(dirty, 'dirty');
+  if (backends.sheet) {
+    const dirty = (await reqP(kvStore.get('dirty'))) || {};
+    items.forEach(({ id }) => { dirty[id] = { op, at: now }; });
+    kvStore.put(dirty, 'dirty');
+  }
+  if (backends.drive) {
+    const d = (await reqP(kvStore.get('driveDirty'))) || { months: {}, dels: {} };
+    items.forEach(({ id, month }) => { if (month) d.months[month] = now; if (op === 'del') d.dels[id] = { month, at: now }; });
+    kvStore.put(d, 'driveDirty');
+  }
 }
 const changed = () => { if (typeof window !== 'undefined') window.dispatchEvent(new Event('data-changed')); };
 

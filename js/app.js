@@ -1,4 +1,5 @@
-import { db, mainDb, useDb, childDbName, deleteDatabase } from './db.js';
+import { db, mainDb, useDb, dbFor, childDbName, deleteDatabase, setBackends } from './db.js';
+import { getDriveConfig, setDriveConfig, getDriveState, signIn as driveSignIn, signOut as driveSignOut, driveSync, drivePending, startDriveAutoSync, hasToken as driveHasToken, clientIdFor } from './drive.js';
 import { LOG_TYPES, FOOD_UNITS, MED_FREQ, typeByKey, typesForAge, fieldOptions, fieldsForAge,
   POSITIVE_BEHAVIOURS, CHALLENGING_BEHAVIOURS, TRIGGERS, RESPONSES, OUTCOMES, behaviourForAge } from './catalog.js';
 import { STAGES, stageFor, nextStage, MILESTONES, RED_FLAGS, MILESTONE_TIPS, milestoneFocus } from './stages.js';
@@ -102,7 +103,17 @@ async function boot() {
   if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
   window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; if (S.settings?.dob) renderHeader(); });
   window.addEventListener('appinstalled', () => { installEvt = null; toast(`🎉 Installed! Open ${APP_NAME} from your home screen.`); if (S.settings?.dob) renderHeader(); });
+  const [cfgSheet, cfgDrive] = await Promise.all([getConfig(), getDriveConfig()]);
+  setBackends({ sheet: !!cfgSheet.enabled, drive: !!cfgDrive.enabled });
   startAutoSync({ buildRow, status: renderSyncBadge });
+  startDriveAutoSync({ status: renderSyncBadge });
+  // another phone's changes arrived from Google Drive: refresh what is on screen
+  window.addEventListener('drive-pulled', async () => {
+    S.children = await childrenList();
+    const st = await db.getKV('settings');
+    if (st) { S.settings = { ...DEFAULT_SETTINGS, ...st }; await refreshAge(); }
+    if (S.settings?.dob && $('#sheet').hidden) route(); // don't disturb an open form
+  });
   if (!S.settings?.dob) return renderOnboarding();
   route();
 }
@@ -139,16 +150,43 @@ async function buildRow(e, child, cdb) {
 async function renderSyncBadge(state) {
   const el = $('#syncBadge');
   if (!el) return;
-  const cfg = await getConfig();
-  if (!cfg.enabled) { el.textContent = '☁️'; el.className = 'sync-badge off'; el.title = 'Online backup is off — tap to set up'; el.setAttribute('aria-label', el.title); return; }
-  const n = await pendingCount(), st = await getState();
-  let txt, cls, title;
-  if (state === 'syncing') [txt, cls, title] = ['☁️ ⟳', 'busy', 'Backing up…'];
-  else if (!navigator.onLine) [txt, cls, title] = [`☁️ ${n}`, 'warn', 'Offline — will back up when online'];
-  else if (st.lastError && n) [txt, cls, title] = ['☁️ ⚠', 'err', 'Backup problem: ' + st.lastError];
-  else if (n) [txt, cls, title] = [`☁️ ${n}`, 'busy', `${n} changes waiting to back up`];
-  else [txt, cls, title] = ['☁️ ✓', 'ok', st.lastSync ? `Backed up ${new Date(st.lastSync).toLocaleString()}` : 'Backed up'];
-  el.textContent = txt; el.className = 'sync-badge ' + cls; el.title = title; el.setAttribute('aria-label', title);
+  const [cfg, dcfg] = await Promise.all([getConfig(), getDriveConfig()]);
+  const set = (txt, cls, title, act = 'backup') => { el.textContent = txt; el.className = 'sync-badge ' + cls; el.title = title; el.setAttribute('aria-label', title); el.dataset.act = act; };
+  if (!cfg.enabled && !dcfg.enabled) return set('☁️', 'off', 'Backup is off — tap to set up');
+  if (state === 'syncing') return set('☁️ ⟳', 'busy', 'Backing up…');
+  if (dcfg.enabled && !driveHasToken()) return set('☁️ Tap to sync', 'warn', 'Tap to sign in to Google and sync', 'driveSignIn');
+  const n = (cfg.enabled ? await pendingCount() : 0) + (dcfg.enabled ? await drivePending() : 0);
+  const err = (dcfg.enabled && (await getDriveState()).lastError) || (cfg.enabled && (await getState()).lastError);
+  if (!navigator.onLine) return set(`☁️ ${n}`, 'warn', 'Offline — will back up when online');
+  if (err && n) return set('☁️ ⚠', 'err', 'Backup problem: ' + err);
+  if (n) return set(`☁️ ${n}`, 'busy', `${n} changes waiting to back up`);
+  const last = dcfg.enabled ? (await getDriveState()).lastSync : (await getState()).lastSync;
+  return set('☁️ ✓', 'ok', last ? `Backed up ${new Date(last).toLocaleString()}` : 'Backed up');
+}
+
+// Queue every child's existing data for the first Drive upload
+async function markAllForDrive() {
+  for (const c of S.children) {
+    const cdb = dbFor(childDbName(c.id));
+    const months = {};
+    (await cdb.all()).forEach(e => { if (e.date) months[e.date.slice(0, 7)] = Date.now(); });
+    await cdb.setKVQuiet('driveDirty', { months, dels: {} });
+    await cdb.setKVQuiet('driveKvDirty', Date.now());
+  }
+}
+
+async function doDriveSignIn() {
+  try {
+    const first = !(await getDriveConfig()).email;
+    toast('Opening Google sign-in…');
+    const email = await driveSignIn();
+    setBackends({ drive: true });
+    if (first) await markAllForDrive();
+    toast(`✓ Signed in${email ? ' as ' + email : ''}. Syncing…`);
+    const r = await driveSync({ silent: false });
+    toast(r.ok ? `✓ Backed up to Google Drive${r.pulled ? ` · ${r.pulled} changes from your other phone` : ''}` : 'Sync will continue in the background');
+  } catch (err) { alert(err.message); }
+  route();
 }
 
 async function refreshAge() {
@@ -172,6 +210,13 @@ function applyAgeTheme() {
   r.setProperty('--t-accent', th.accent); r.setProperty('--t-accent-dark', th.dark);
   r.setProperty('--t-hero', `linear-gradient(135deg, ${th.hero[0]} 0%, ${th.hero[1]} 100%)`);
   r.setProperty('--t-hero-dark', `linear-gradient(135deg, ${th.heroDark[0]} 0%, ${th.heroDark[1]} 100%)`);
+  // full-screen background: the theme's colours + a soft pattern of its pictures
+  r.setProperty('--t-bg', `linear-gradient(170deg, ${th.hero[0]} 0%, ${th.hero[1]} 100%)`);
+  r.setProperty('--t-bg-dark', `linear-gradient(170deg, ${th.heroDark[0]} 0%, ${th.heroDark[1]} 100%)`);
+  const em = th.deco.split(/\s+/).filter(Boolean);
+  const spots = [[18, 40, -12], [150, 28, 10], [92, 108, 6], [20, 170, 14], [168, 150, -8], [110, 218, -14], [40, 262, 8], [175, 262, 4]];
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='220' height='290'><g font-size='34' font-family='Apple Color Emoji,Segoe UI Emoji,Noto Color Emoji,sans-serif'>${spots.map(([x, y, rot], i) => `<text x='${x}' y='${y}' transform='rotate(${rot} ${x} ${y})'>${em[i % em.length]}</text>`).join('')}</g></svg>`;
+  r.setProperty('--t-pattern', `url("data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}")`);
   document.querySelector('meta[name=theme-color]')?.setAttribute('content', th.accent);
 }
 
@@ -200,8 +245,7 @@ function renderHeader() {
   const s = S.settings;
   const canInstall = !isStandalone() && (installEvt || isIOS);
   const th = S.theme;
-  $('#hdr').innerHTML = `<span class="hdr-deco" aria-hidden="true">${esc(th.deco)}</span>
-    <button class="who" data-act="children" aria-label="Switch or add child"><span class="avatar" aria-hidden="true">${esc((s.name || '?')[0].toUpperCase())}</span>
+  $('#hdr').innerHTML = `<button class="who" data-act="children" aria-label="Switch or add child"><span class="avatar" aria-hidden="true">${esc((s.name || '?')[0].toUpperCase())}</span>
     <span><span class="name">${esc(s.name)} <span class="caret">▾</span></span><span class="sub">${esc(ageText(s.dob))} · ${th.emoji} ${esc(th.label)}: ${esc(th.name)}</span></span></button>
     <div class="hdr-actions">${canInstall ? '<button class="pill-btn install" data-act="install">📲 Install</button>' : ''}
     <button id="syncBadge" class="sync-badge" data-act="view" data-view="settings"></button>
@@ -292,6 +336,7 @@ async function renderHome() {
     ${banner}
     ${await installNudge()}
     <button class="voice-cta" data-act="voice"><span class="mic-dot">🎤</span><span><b>Tell me what happened</b><br><small>“Ate 4 spoons of ragi at 8 and napped for an hour”</small></span></button>
+    ${await lastFeedStrip()}
     <div class="cats" role="tablist" aria-label="Categories">
       ${cats.map(c => { const n = running.filter(e => (CAT[e.type] || 'feel') === c.k).length; return `<button class="cat c-${c.k}" role="tab" data-act="homeCat" data-cat="${c.k}" aria-selected="${c.k === S.homeCat}">${c.icon} ${c.label}${n ? ' <i class="dot" aria-label="timer running"></i>' : ''}</button>`; }).join('')}
       <button class="cat all" data-act="openPicker">＋ All</button>
@@ -311,7 +356,7 @@ function quickBtn(q, running, sm) {
   if (q.mode === 'toggle') {
     const run = running.find(e => e.type === q.k);
     return run
-      ? `<button class="qb on c-${c}" data-act="toggle" data-type="${q.k}" aria-pressed="true"><span class="qi">${q.icon}</span><span class="ql">${esc(q.label)}</span><b class="elapsed" data-since="${run.start}">${fmtDur(entryMinutes(run))}</b><small>tap to stop</small></button>`
+      ? `<button class="qb on c-${c}" data-act="toggle" data-type="${q.k}" aria-pressed="true"><span class="qi">${q.icon}</span><span class="ql">${esc(q.label)}${run.data?.side ? ` · ${esc(run.data.side)}` : ''}</span><b class="elapsed" data-since="${run.start}">${fmtDur(entryMinutes(run))}</b><small>tap to stop</small></button>`
       : `<button class="qb c-${c}" data-act="toggle" data-type="${q.k}" aria-pressed="false"><span class="qi">${q.icon}</span><span class="ql">${esc(q.label)}</span><small>tap to start</small></button>`;
   }
   if (q.mode === 'count') {
@@ -417,6 +462,7 @@ function entryList(list, emptyText = 'Nothing logged yet.') {
 }
 
 function tickTimers() {
+  document.querySelectorAll('[data-ago]').forEach(el => { el.textContent = agoText(Number(el.dataset.ago)); });
   document.querySelectorAll('[data-since]').forEach(el => {
     const m = (Date.now() - Number(el.dataset.since)) / 60000;
     el.textContent = m < 60 ? `${Math.floor(m)}m ${Math.floor((m % 1) * 60)}s` : fmtDur(m);
@@ -1242,11 +1288,39 @@ async function renderSettings() {
   });
   onSave('#displayForm', fd => { S.settings = { ...S.settings, theme: fd.get('theme') || 'auto' }; });
   $('#syncForm')?.addEventListener('submit', onSyncSubmit);
+  $('#clientIdForm')?.addEventListener('submit', async ev => {
+    ev.preventDefault();
+    const cid = new FormData(ev.target).get('cid').trim();
+    if (!/\.apps\.googleusercontent\.com$/.test(cid)) return alert('That does not look like a Client ID. It ends with .apps.googleusercontent.com');
+    await setDriveConfig({ ...(await getDriveConfig()), clientId: cid });
+    toast('Saved ✓ Now tap "Sign in with Google"'); route();
+  });
 }
 
 async function backupSection() {
-  const cfg = await getConfig(), st = await getState(), pend = await pendingCount();
-  return `<form id="syncForm" class="card">
+  const d = await getDriveConfig(), ds = await getDriveState();
+  const cfg = await getConfig(), st = await getState(), pend = cfg.enabled ? await pendingCount() : 0;
+  const clientId = clientIdFor(d);
+  const signedIn = d.enabled && d.email;
+  const drive = `<section class="card drive-card">
+      <div class="row between"><div class="label">🟢 Google Drive — recommended</div>${signedIn ? '<span class="badge ok">On</span>' : ''}</div>
+      <p class="small">Sign in with your Gmail and everything — every child, every log and photo — is saved in a <b>"Happy Parenthood Backup"</b> folder in <b>that account's Google Drive</b>. Sign in with the same Gmail on another phone (e.g. Appa's) and both phones stay in sync.</p>
+      ${signedIn ? `<p class="small">Signed in as <b>${esc(d.email)}</b>${ds.lastSync ? ` · last sync ${esc(new Date(ds.lastSync).toLocaleString())}` : ''}${ds.lastError ? `<br><span class="err-text">⚠ ${esc(ds.lastError)}</span>` : ''}</p>
+        <div class="row wrap"><button type="button" class="btn primary" data-act="driveSyncNow">🔄 Sync now</button><button type="button" class="btn" data-act="driveSignOut">Sign out</button></div>
+        <p class="muted small">For your privacy, Google lets a web app stay signed in for about an hour at a time. If ☁️ at the top says <b>Tap to sync</b>, tap it once — no data is lost meanwhile.</p>`
+      : clientId ? `<button type="button" class="btn google wide" data-act="driveSignIn"><span class="g-logo">G</span> Sign in with Google</button>
+        <p class="muted small">The app can only see the files it creates in your Drive — nothing else.</p>`
+      : `<p class="warn small">One-time setup needed: Google requires every app to be registered before "Sign in with Google" works.</p>
+        <details open><summary class="small"><b>One-time setup (about 10 minutes)</b></summary><ol class="small">
+          <li>On a computer, open <b>console.cloud.google.com</b> and sign in with your Gmail. Create a project named <i>Happy Parenthood</i>.</li>
+          <li><b>APIs & Services → Library</b> → search <b>Google Drive API</b> → <b>Enable</b>.</li>
+          <li><b>Google Auth Platform → Branding</b> (OAuth consent screen): app name <i>Happy Parenthood</i>, your email as support & developer contact. <b>Audience</b>: External → then press <b>Publish app</b> (the app only asks for the non-sensitive "drive.file" permission, so no Google review is needed).</li>
+          <li><b>Clients → Create client</b> → type <b>Web application</b> → under <b>Authorized JavaScript origins</b> add <code>${esc(location.origin)}</code> → Create.</li>
+          <li>Copy the <b>Client ID</b> (ends with <code>.apps.googleusercontent.com</code>) and paste it below.</li></ol></details>
+        <form id="clientIdForm" class="row"><input name="cid" placeholder="xxxx.apps.googleusercontent.com" aria-label="Google OAuth Client ID"><button class="btn primary">Save</button></form>`}
+    </section>`;
+  return drive + `<details class="card" ${cfg.enabled ? 'open' : ''}><summary><b>📊 Google Sheet backup (advanced, optional)</b></summary>
+    <form id="syncForm">
       <p class="small">Every entry (and photo) of every child is copied to your Google Sheet / Drive automatically whenever the phone is online. When offline, changes wait safely and upload later.</p>
       <p class="small"><b>Status:</b> ${cfg.enabled ? (pend ? `${pend} change(s) waiting` : 'all backed up ✓') : 'off'}${st.lastSync ? ` · last backup ${esc(new Date(st.lastSync).toLocaleString())}` : ''}${st.lastError ? `<br><span class="err-text">⚠ ${esc(st.lastError)}</span>` : ''}
         ${cfg.enabled && st.photosUnsupported ? `<br><span class="err-text">📷 Photos are not backed up yet — update the Apps Script (steps below) and press Save & test.</span>` : ''}</p>
@@ -1262,7 +1336,7 @@ async function backupSection() {
         <li>Choose <b>setup</b> in the function list → <b>▶ Run</b> → allow all permissions.</li>
         <li><b>Deploy → Manage deployments → ✏️</b> → Who has access: <b>Anyone</b> → Version: <b>New version</b> → Deploy. (First time: Deploy → New deployment → Web app.)</li>
         <li>Paste the <code>/exec</code> URL and secret here and press <b>Save & test</b>.</li></ol></details>
-    </form>`;
+    </form></details>`;
 }
 
 async function onSyncSubmit(ev) {
@@ -1277,7 +1351,8 @@ async function onSyncSubmit(ev) {
     if (!/^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec$/.test(url)) return alert('Please paste the Apps Script Web app URL. It looks like https://script.google.com/macros/s/…/exec');
   }
   await setConfig(next);
-  if (!next.enabled) { toast('Online backup turned off'); return route(); }
+  setBackends({ sheet: next.enabled });
+  if (!next.enabled) { toast('Google Sheet backup turned off'); return route(); }
   toast('Testing connection…');
   try {
     const r = await testConnection(next);
@@ -1474,9 +1549,11 @@ function toast(msg, actions = []) {
 
 // One-tap timer: first tap starts, second tap stops and logs the duration.
 const SLEEPY = ['sleep', 'nap'];
-async function toggleTimer(type) {
+async function toggleTimer(type, opts = {}) {
   const t = typeInfo(type);
   const running = (await db.byType(type)).find(e => !e.end);
+  // Breastfeeding: ask which side when starting; offer "switch side" while feeding
+  if (type === 'breastfeed' && !opts.side && !opts.stop) return running ? askBreastRunning(running) : askBreastSide();
   if (running) {
     running.end = Date.now();
     await db.put(running);
@@ -1495,11 +1572,48 @@ async function toggleTimer(type) {
     }
   }
   const now = Date.now();
-  const e = { id: uid(), type, start: now, end: null, date: dateKey(now), data: {}, note: '', by: S.settings.me, createdAt: now };
+  const e = { id: uid(), type, start: now, end: null, date: dateKey(now), data: opts.side ? { side: opts.side } : {}, note: '', by: S.settings.me, createdAt: now };
   await db.put(e);
   route();
   toast(`${t.icon} ${t.label} started at ${fmtTime(now)}${stopped ? ` · ${typeInfo(stopped.type).label} ended` : ''}`, [
     ['Undo', async () => { await db.del(e.id); if (stopped) { stopped.end = null; await db.put(stopped); } route(); }]]);
+}
+
+async function askBreastSide() {
+  const last = (await db.byType('breastfeed')).sort((a, b) => b.start - a.start)[0];
+  const ls = last?.data?.side;
+  const suggest = ls === 'Left' ? 'Right' : ls === 'Right' ? 'Left' : null;
+  openSheet(`<div class="sheet-hd"><h3>🤱 Which side?</h3><button class="icon-btn" data-act="close" aria-label="Close">✕</button></div>
+    ${last ? `<p class="small muted">Last feed: ${esc(ls || 'side not noted')} · ${fmtTime(last.start)} (${esc(agoText(last.start))})${suggest ? ` — try <b>${suggest}</b> this time.` : ''}</p>` : ''}
+    <div class="side-pick">${['Left', 'Right', 'Both'].map(sd => `<button class="side-btn ${sd === suggest ? 'suggested' : ''}" data-act="bfStart" data-side="${sd}"><span>${sd === 'Left' ? '⬅️' : sd === 'Right' ? '➡️' : '↔️'}</span><b>${sd}</b>${sd === suggest ? '<small>suggested</small>' : ''}</button>`).join('')}</div>
+    <p class="muted small">The timer starts as soon as you pick a side.</p>`, { focus: false });
+}
+function askBreastRunning(run) {
+  const other = run.data?.side === 'Left' ? 'Right' : run.data?.side === 'Right' ? 'Left' : null;
+  openSheet(`<div class="sheet-hd"><h3>🤱 Feeding · ${esc(run.data?.side || '')} · <span data-since="${run.start}">${fmtDur(entryMinutes(run))}</span></h3><button class="icon-btn" data-act="close" aria-label="Close">✕</button></div>
+    <div class="side-pick">
+      <button class="side-btn stop" data-act="bfStop"><span>⏹️</span><b>Stop feed</b></button>
+      ${other ? `<button class="side-btn" data-act="bfSwitch" data-side="${other}"><span>🔄</span><b>Switch to ${other}</b><small>ends ${esc(run.data.side)}, starts ${other}</small></button>` : ''}
+    </div>`, { focus: false });
+}
+function agoText(ms) {
+  const m = Math.max(0, (Date.now() - ms) / 60000);
+  if (m < 1) return 'just now';
+  return `${fmtDur(m)} ago`;
+}
+
+// "Last feed 2h 15m ago" strip on Home for babies and toddlers
+async function lastFeedStrip() {
+  if (S.months >= 36) return '';
+  const feeds = [...await db.byType('breastfeed'), ...await db.byType('bottle')].sort((a, b) => b.start - a.start);
+  const meals = S.months >= 5 ? (await db.byType('meal')).sort((a, b) => b.start - a.start) : [];
+  const f = feeds[0], m = meals[0];
+  if (!f && !m) return '';
+  const feedTxt = !f ? '' : !f.end && f.type === 'breastfeed'
+    ? `<span class="lf"><b>🤱 Feeding now</b> ${esc(f.data?.side || '')} · <span data-since="${f.start}">${fmtDur(entryMinutes(f))}</span></span>`
+    : `<span class="lf">${f.type === 'bottle' ? '🍼' : '🤱'} Last feed <b data-ago="${f.start}">${esc(agoText(f.start))}</b> <small>${fmtTime(f.start)}${f.data?.side ? ' · ' + esc(f.data.side) : ''}${f.data?.amount ? ' · ' + esc(f.data.amount) + ' ml' : ''}</small></span>`;
+  const mealTxt = m ? `<span class="lf">🥣 Last meal <b data-ago="${m.start}">${esc(agoText(m.start))}</b></span>` : '';
+  return `<section class="last-feed" aria-live="polite">${feedTxt}${mealTxt}</section>`;
 }
 
 // ------------------------------------------------------------------ events
@@ -1555,6 +1669,15 @@ async function handleClick(el, a, ev) {
       break;
     }
     case 'toggle': await toggleTimer(el.dataset.type); break;
+    case 'bfStart': closeSheet(); await toggleTimer('breastfeed', { side: el.dataset.side }); break;
+    case 'bfStop': closeSheet(); await toggleTimer('breastfeed', { stop: true }); break;
+    case 'bfSwitch': {
+      closeSheet();
+      const run = (await db.byType('breastfeed')).find(e => !e.end);
+      if (run) { run.end = Date.now(); await db.put(run); }
+      await toggleTimer('breastfeed', { side: el.dataset.side });
+      break;
+    }
     case 'toastAct': { const f = toast._actions?.[Number(el.dataset.i)]; $('#toast').hidden = true; if (f) await f(); break; }
     case 'eidone': {
       await db.put({ id: uid(), type: 'ei', start: Date.now(), end: null, date: dateKey(), data: { text: el.dataset.text }, note: '', by: S.settings.me, createdAt: Date.now() });
@@ -1567,6 +1690,14 @@ async function handleClick(el, a, ev) {
     case 'addChild': openAddChild(); break;
     case 'switchChild': closeSheet(); await selectChild(el.dataset.id); toast(`Switched to ${S.settings?.name || 'child'}`); break;
     case 'removeChild': await removeChild(el.dataset.id); break;
+    case 'backup': S.view = 'settings'; S.settingsTab = 'backup'; closeSheet(); route(); break;
+    case 'driveSignIn': await doDriveSignIn(); break;
+    case 'driveSyncNow': {
+      if (!driveHasToken()) { await doDriveSignIn(); break; }
+      try { const r = await driveSync({ silent: false }); toast(r.ok ? `✓ Synced${r.pulled ? ` · ${r.pulled} changes received` : ''}` : 'Please sign in again'); } catch (err) { alert('Sync failed: ' + err.message); }
+      route(); break;
+    }
+    case 'driveSignOut': if (confirm('Sign out of Google Drive backup on this phone? Your data stays on the phone and in Drive.')) { await driveSignOut(); setBackends({ drive: false }); route(); } break;
     case 'homeTab': S.homeTab = el.dataset.tab; route(); break;
     case 'healthTab': S.healthTab = el.dataset.tab; route(); break;
     case 'install': doInstall(); break;
