@@ -450,3 +450,20 @@ body:not(.onboarding) { background: transparent; }
 .hdr button.who > span:last-child { min-width: 0; overflow: hidden; }
 .hdr .name, .hdr .sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hdr-actions { position: relative; z-index: 1; }
+
+/* ---------- Ask (offline assistant) ---------- */
+.chat { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; }
+.msg { max-width: 88%; padding: 10px 13px; border-radius: 18px; font-size: .92rem; box-shadow: var(--shadow); }
+.msg p { margin: .3em 0; }
+.msg.me { align-self: flex-end; background: var(--accent); color: var(--accent-ink); border-bottom-right-radius: 6px; font-weight: 700; }
+.msg.bot { align-self: flex-start; background: var(--surface); border: 1px solid var(--border); border-bottom-left-radius: 6px; }
+.msg.bot.personal { border-left: 4px solid var(--c-food-s); }
+.msg.bot.urgent { border: 2px solid var(--high); background: var(--high-bg); }
+.msg .chips.rel { margin-top: 8px; }
+.chip-btn.ask-q { border-color: var(--accent-2); background: var(--accent-soft); font-weight: 700; text-align: left; }
+.chips.sug { margin: 6px 0 10px; }
+.ask-bar { display: flex; gap: 8px; align-items: flex-start; position: sticky; bottom: calc(70px + env(safe-area-inset-bottom)); background: color-mix(in srgb, var(--bg) 92%, transparent); padding: 8px 0; z-index: 2; }
+.ask-bar .with-mic { flex: 1; }
+.ask-bar input { margin: 0; }
+.ask-bar .mic { margin-top: 0; }
+.ask-btn { font-size: 1.1rem; }

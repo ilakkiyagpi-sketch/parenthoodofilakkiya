@@ -6,6 +6,7 @@ import { STAGES, stageFor, nextStage, MILESTONES, RED_FLAGS, MILESTONE_TIPS, mil
 import { themeFor, MONTHLY_PHYSICAL, EI_ROADMAP, eiRowFor, UIP_VACCINES } from './devdata.js';
 import { INDICATORS, whoValue, zScore, percentile, zLabel } from './growth.js';
 import { applyPronouns, pr } from './pronouns.js';
+import { answer as askAnswer, suggestions as askSuggestions, TOPICS as ASK_TOPICS, questionsFor } from './assistant.js';
 import { GUIDE, DAILY_TIPS } from './guide.js';
 import { esc, uid, dateKey, parseKey, addDays, fmtTime, toLocalInput, fromLocalInput, fmtDur, fmtDateLong, fmtDateShort,
   hmToMin, minToHm, ageMonths, ageText, dayOfYear, entryMinutes } from './util.js';
@@ -220,7 +221,7 @@ function applyAgeTheme() {
   document.querySelector('meta[name=theme-color]')?.setAttribute('content', th.accent);
 }
 
-const NAV_OF = { home: 'home', diary: 'diary', health: 'health', heart: 'heart', more: 'more', grow: 'more', routine: 'more', guide: 'more', settings: 'more' };
+const NAV_OF = { home: 'home', diary: 'diary', health: 'health', heart: 'heart', more: 'more', grow: 'more', routine: 'more', guide: 'more', settings: 'more', ask: 'more' };
 let lastPage = '';
 // Re-render the current screen. The scroll position is kept when staying on the same
 // screen (e.g. after tapping a button or a checkbox) and reset only when changing screens.
@@ -233,7 +234,7 @@ async function route() {
   document.querySelectorAll('nav.tabs button').forEach(b => b.setAttribute('aria-current', b.dataset.view === NAV_OF[S.view] ? 'page' : 'false'));
   document.body.dataset.view = S.view;
   renderHeader();
-  await ({ home: renderHome, diary: renderDiary, health: renderHealth, heart: renderHeart, more: renderMore, grow: renderGrow, routine: renderRoutine, guide: renderGuide, settings: renderSettings })[S.view]();
+  await ({ ask: renderAsk, home: renderHome, diary: renderDiary, health: renderHealth, heart: renderHeart, more: renderMore, grow: renderGrow, routine: renderRoutine, guide: renderGuide, settings: renderSettings })[S.view]();
   if (keep) {
     const ds = main().querySelectorAll('details');
     if (open && open.length === ds.length) ds.forEach((d, i) => { d.open = open[i]; });
@@ -247,7 +248,7 @@ function renderHeader() {
   const th = S.theme;
   $('#hdr').innerHTML = `<button class="who" data-act="children" aria-label="Switch or add child"><span class="avatar" aria-hidden="true">${esc((s.name || '?')[0].toUpperCase())}</span>
     <span><span class="name">${esc(s.name)} <span class="caret">▾</span></span><span class="sub">${esc(ageText(s.dob))} · ${th.emoji} ${esc(th.label)}: ${esc(th.name)}</span></span></button>
-    <div class="hdr-actions">${canInstall ? '<button class="pill-btn install" data-act="install">📲 Install</button>' : ''}
+    <div class="hdr-actions"><button class="icon-btn ask-btn" data-act="view" data-view="ask" aria-label="Ask a parenting question">💬</button>${canInstall ? '<button class="pill-btn install" data-act="install">📲 Install</button>' : ''}
     <button id="syncBadge" class="sync-badge" data-act="view" data-view="settings"></button>
     <button class="icon-btn" data-act="view" data-view="settings" aria-label="Settings">⚙️</button></div>`;
   renderSyncBadge();
@@ -909,10 +910,148 @@ async function openIllness(id) {
     <div class="row actions"><button class="btn" data-act="edit" data-id="${i.id}">✏️ Edit illness</button></div>`, { focus: false });
 }
 
+// ------------------------------------------------------------------ ASK (offline assistant)
+// Functions the assistant uses to answer personal questions from the logs
+function askContext() {
+  const P = S.P, name = S.settings.name, tg = S.stage.targets;
+  const dayKey = off => addDays(dateKey(), off);
+  const sumFor = async d => summarize(await entriesAround(d), d);
+  return {
+    name, months: S.months, P, stageName: S.stage.name, ageText: () => ageText(S.settings.dob),
+    async lastFeed() {
+      const feeds = [...await db.byType('breastfeed'), ...await db.byType('bottle')].sort((a, b) => b.start - a.start);
+      const meal = (await db.byType('meal')).sort((a, b) => b.start - a.start)[0];
+      const f = feeds[0], out = [];
+      if (!f && !meal) return ['No feeds or meals logged yet. Tap 🥣 Food on Home to start logging.'];
+      if (f) out.push(!f.end && f.type === 'breastfeed' ? `🤱 Feeding now (${f.data?.side || 'side not noted'}) — started ${fmtTime(f.start)}.` : `${f.type === 'bottle' ? '🍼 Bottle' : '🤱 Breastfeed'} ${agoText(f.start)} (${fmtTime(f.start)}${f.data?.side ? ', ' + f.data.side : ''}${f.data?.amount ? ', ' + f.data.amount + ' ml' : ''}${f.end && f.end !== f.start ? ', ' + fmtDur(entryMinutes(f)) : ''}).`);
+      if (meal) out.push(`🥣 Last meal ${agoText(meal.start)}: ${(meal.data?.foods || []).map(x => x.name).join(', ') || meal.data?.meal || 'food'}.`);
+      const today = await sumFor(dateKey());
+      if (S.months < 24) out.push(`Today so far: ${today.feeds} milk feeds and ${today.meals} meals.`);
+      return out;
+    },
+    async counts(type) {
+      const sm = await sumFor(dateKey()), y = await sumFor(dayKey(-1));
+      const n = type === 'pee' ? sm.pee : sm.poop, ny = type === 'pee' ? y.pee : y.poop;
+      const out = [`${type === 'pee' ? '💛 Pee / wet nappies' : '💩 Poops'} today: ${n} (yesterday: ${ny}).`];
+      if (type === 'pee' && S.months < 24) out.push(n >= 6 || new Date().getHours() < 18 ? 'Babies usually have 6 or more wet nappies a day.' : '⚠️ That is lower than the usual 6+ a day. Offer more feeds; if urine is dark or there is none for 6–8 hours, see a doctor.');
+      return out;
+    },
+    async sleepDay(off) {
+      const d = dayKey(off), sm = await sumFor(d);
+      if (!sm.sleepMin) return [`No sleep logged for ${off ? 'yesterday' : 'today'} yet. Use the 🌙 / 😴 buttons to time sleep.`];
+      return [`🌙 ${off ? 'Yesterday' : 'Today'}: ${fmtDur(sm.sleepMin)} in total — night ${fmtDur(sm.nightMin)}, ${sm.napCount} nap${sm.napCount === 1 ? '' : 's'} (${fmtDur(sm.napMin)}).`, `Recommended for ${P.his} age: ${tg.sleep[0]}–${tg.sleep[1]} hours in 24 hours.`];
+    },
+    async sleepWeek() {
+      const days = []; for (let i = 7; i >= 1; i--) days.push(await sumFor(dayKey(-i)));
+      const logged = days.filter(x => x.sleepMin > 0);
+      if (!logged.length) return ['No sleep logged in the last 7 days yet. Time naps and night sleep with the 🌙 / 😴 buttons and ask again.'];
+      const avg = logged.reduce((a, x) => a + x.sleepMin, 0) / logged.length / 60;
+      const [lo, hi] = tg.sleep;
+      const verdict = avg < lo ? `⚠️ That is below the recommended ${lo}–${hi} h. Try an earlier bedtime and check nap timing.` : avg > hi ? `That is above the usual ${lo}–${hi} h — fine if ${P.he} is well; mention it to your doctor if ${P.he} seems unusually sleepy.` : `✓ That is within the recommended ${lo}–${hi} h for ${P.his} age.`;
+      return [`Average sleep over the last ${logged.length} logged day${logged.length > 1 ? 's' : ''}: ${avg.toFixed(1)} h a day.`, verdict];
+    },
+    async foodDay(off) {
+      const d = dayKey(off), list = (await db.byDate(d)).filter(e => e.type === 'meal').sort((a, b) => a.start - b.start);
+      if (!list.length) return [`No meals logged ${off ? 'yesterday' : 'today'} yet.`];
+      return list.map(e => `• ${fmtTime(e.start)} ${e.data?.meal || 'Meal'}: ${(e.data?.foods || []).map(f => `${f.name}${f.qty ? ` ${f.qty} ${f.unit}` : ''}`).join(', ') || '—'}${e.data?.appetite ? ` (${e.data.appetite.toLowerCase()})` : ''}`);
+    },
+    async foodsTried() {
+      const map = await db.getKV('foods', {}); const list = Object.entries(map).sort((a, b) => b[1].first.localeCompare(a[1].first));
+      if (!list.length) return ['No foods logged yet.'];
+      return [`${list.length} different foods tried so far.`, `Newest: ${list.slice(0, 6).map(([n, f]) => `${n} (${fmtDateShort(f.first)})`).join(', ')}.`, ...(list.some(([, f]) => f.reactions?.length) ? [`Reactions noted for: ${list.filter(([, f]) => f.reactions?.length).map(([n]) => n).join(', ')}.`] : [])];
+    },
+    async growth() {
+      const g = (await db.byType('growth')).sort((a, b) => b.start - a.start);
+      if (!g.length) return ['No weight or height logged yet. Add one in More → Physical growth.'];
+      const out = [];
+      for (const [ind, key] of [['wfa', 'weight'], ['hfa', 'height'], ['hca', 'head']]) {
+        const e = g.find(x => x.data?.[key]); if (!e) continue;
+        const mo = ageMonths(S.settings.dob, e.start, Number(S.settings.premature) || 0);
+        const z = zScore(ind, S.settings.sex, mo, e.data[key]);
+        out.push(`${INDICATORS[ind].label}: ${e.data[key]} ${INDICATORS[ind].unit} on ${fmtDateShort(e.date)}${z != null ? ` — ${percentile(z)}th percentile: ${zLabel(z)[1]}` : ''}.`);
+      }
+      return [...out, 'The WHO chart is in More → Physical growth.'];
+    },
+    async nextVaccine() {
+      const state = await db.getKV('vaccines', {}); const dob = parseKey(S.settings.dob);
+      const due = UIP_VACCINES.map(v => { const d = new Date(dob); d.setDate(d.getDate() + Math.round(v.at * 30.4375)); return { ...v, dk: dateKey(d), done: state[`uip:${v.at}`] }; });
+      const over = due.filter(v => !v.done && v.dk < dateKey()), next = due.find(v => !v.done && v.dk >= dateKey());
+      const out = [];
+      if (over.length) out.push(`⚠️ Not marked as given yet: ${over.map(v => `${v.label} (${v.name})`).join('; ')}. Tick them in More → Vaccines if already given.`);
+      if (next) out.push(`💉 Next: ${next.label} — ${next.name}, due around ${fmtDateLong(next.dk)}.`);
+      return out.length ? out : ['🎉 All government-schedule vaccines are marked as given.'];
+    },
+    async milestones() {
+      const state = await db.getKV('milestones', {}); const { passed, next } = milestoneFocus(S.months);
+      const todo = c => c ? c.items.map((it, i) => ({ it, k: `${c.at}:${i}` })).filter(x => !state[x.k]).map(x => x.it[1]) : [];
+      const out = [];
+      if (passed) { const t = todo(passed); out.push(t.length ? `By ${ageLabel(passed.at)} most children: ${t.slice(0, 4).join('; ')}${t.length > 4 ? '…' : ''} (not ticked yet).` : `✓ All ${ageLabel(passed.at)} milestones ticked.`); }
+      if (next && next !== passed) { const t = todo(next); out.push(`Working towards (by ${ageLabel(next.at)}): ${t.slice(0, 4).join('; ')}${t.length > 4 ? '…' : ''}.`); }
+      return [...out, 'Ideas to encourage each one are in Home → This month.'];
+    },
+    async nextRoutine() {
+      const r = await getRoutine(); const now = new Date().getHours() * 60 + new Date().getMinutes();
+      const n = r.filter(x => x.min >= now - 10).slice(0, 3);
+      return n.length ? n.map(x => `🕒 ${minToHm(x.min)} — ${x.label}`) : ['The rest of today\'s routine is done. Bedtime routine next!'];
+    },
+    async meds() {
+      const meds = (await db.byType('medicine')).sort((a, b) => b.start - a.start);
+      if (!meds.length) return ['No medicines logged.'];
+      const latest = {}; meds.forEach(m => { const k = (m.data?.name || '').toLowerCase(); if (k && !latest[k]) latest[k] = m; });
+      return Object.values(latest).slice(0, 5).map(m => `💊 ${m.data.name}${m.data.dose ? ' ' + m.data.dose : ''}: last given ${agoText(m.start)} (${fmtTime(m.start)} ${fmtDateShort(m.date)}).`).concat(['See Health for next-dose times from the prescription.']);
+    },
+    async triggers() {
+      const list = (await db.range(dayKey(-13), dateKey())).filter(e => e.type === 'behaviour' && e.data?.kind === 'neg');
+      if (!list.length) return ['No challenging moments logged in the last 2 weeks. 🌈'];
+      const c = {}; list.forEach(e => { if (e.data.trigger) c[e.data.trigger] = (c[e.data.trigger] || 0) + 1; });
+      const top = Object.entries(c).sort((a, b) => b[1] - a[1]);
+      return [`${list.length} challenging moment${list.length > 1 ? 's' : ''} in the last 2 weeks.`, top.length ? `Most common triggers: ${top.slice(0, 3).map(([k, n]) => `${k} (${n})`).join(', ')}.` : 'Add the likely trigger when logging to see patterns.', top[0] ? triggerAdvice(top[0][0]) : ''].filter(Boolean);
+    },
+    async screenWeek() {
+      let tot = 0; for (let i = 6; i >= 0; i--) tot += (await sumFor(dayKey(-i))).screenMin;
+      return [`📱 Screen time in the last 7 days: ${fmtDur(tot)} (about ${fmtDur(tot / 7)} a day).`, tg.screenMax ? `Recommended maximum at ${P.his} age: ${tg.screenMax} min a day.` : 'Under 2 years, WHO and AAP advise avoiding screens (video calls are fine).'];
+    },
+    async activeWeek() {
+      let out = 0, play = 0; for (let i = 6; i >= 0; i--) { const sm = await sumFor(dayKey(-i)); out += sm.outdoorMin; play += sm.playMin; }
+      return [`🌳 Last 7 days: ${fmtDur(out)} outdoors and ${fmtDur(play)} of play.`, S.months < 12 ? 'Babies need active floor play several times a day.' : `Aim for about ${tg.activeMin} minutes of active play a day.`];
+    },
+  };
+}
+
+async function renderAsk() {
+  const chat = await db.getKV('chat', []);
+  const he = s => S.settings.sex === 'girl' ? s.replace(/\bhe\b/g, 'she').replace(/\bhis\b/g, 'her').replace(/\bhim\b/g, 'her') : s;
+  const sug = askSuggestions(S.months).map(he);
+  const bubble = m => m.role === 'me' ? `<div class="msg me">${esc(m.text)}</div>`
+    : `<div class="msg bot ${m.urgent ? 'urgent' : ''} ${m.personal ? 'personal' : ''}"><b>${esc(m.title)}</b>${(m.lines || []).map(l => `<p>${esc(l)}</p>`).join('')}
+      ${m.extra ? `<b>${esc(m.extra.title)}</b>${m.extra.lines.map(l => `<p>${esc(l)}</p>`).join('')}` : ''}
+      ${m.note ? `<p class="muted small">${esc(m.note)}</p>` : ''}${m.src ? `<p class="muted small">Source: ${esc(m.src)}</p>` : ''}
+      ${m.related?.length ? `<div class="chips rel">${m.related.map(q => `<button class="chip-btn ask-q" data-act="askQ" data-q="${esc(q)}">${esc(q)}</button>`).join('')}</div>` : ''}</div>`;
+  main().innerHTML = `${backBar()}
+    <h2>💬 Ask about ${esc(S.settings.name)}</h2>
+    <p class="muted small">Offline helper with answers on sleep, food, health, growth, milestones, feelings, behaviour, school and teens, plus ${S.P.his} own logs. General guidance only — not a doctor. For emergencies call 108 / 112.</p>
+    <div class="chat" id="chat">${chat.length ? chat.map(bubble).join('') : `<div class="msg bot"><b>Hi! 👋</b><p>Ask me anything about ${esc(S.settings.name)} — or tap a question below.</p></div>`}</div>
+    <div class="chips sug">${sug.map(q => `<button class="chip-btn ask-q" data-act="askQ" data-q="${esc(q)}">${esc(q)}</button>`).join('')}</div>
+    <form id="askForm" class="ask-bar"><span class="with-mic"><input id="askInput" name="q" placeholder="Type or 🎤 speak your question…" autocomplete="off" aria-label="Your question">${micBtn('q')}</span><button class="btn primary">Ask</button></form>
+    <details class="card"><summary><b>Browse topics</b></summary>${ASK_TOPICS.map(t => `<div class="label">${esc(t)}</div><div class="chips">${questionsFor(t, S.months).map(q => `<button class="chip-btn ask-q" data-act="askQ" data-q="${esc(he(q.replace(/\{him\}/g, 'him')))}">${esc(he(q.replace(/\{him\}/g, 'him')))}</button>`).join('')}</div>`).join('')}</details>
+    ${chat.length ? '<button class="btn small" data-act="askClear">Clear chat</button>' : ''}`;
+  $('#askForm').addEventListener('submit', ev => { ev.preventDefault(); const q = $('#askInput').value.trim(); if (q) askQuestion(q); });
+  const box = $('#chat'); if (box.lastElementChild) box.lastElementChild.scrollIntoView({ block: 'nearest' });
+}
+
+async function askQuestion(q) {
+  const res = await askAnswer(q, askContext());
+  if (!res) return;
+  const chat = (await db.getKV('chat', [])).concat([{ role: 'me', text: q, at: Date.now() }, { role: 'bot', ...res, at: Date.now() }]).slice(-60);
+  await db.setKVQuiet('chat', chat);
+  await renderAsk();
+  $('#chat .msg.me:last-of-type')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+}
+
 // ------------------------------------------------------------------ MORE
 function renderMore() {
   const cards = [
-    ['routine', '🕒', 'Routine', `Timetable for ${S.P.his} age`], ['grow:milestones', '🎯', 'Milestones', `Tick what ${S.P.he} can do`],
+    ['ask', '💬', 'Ask', 'Parenting questions, offline'], ['routine', '🕒', 'Routine', `Timetable for ${S.P.his} age`], ['grow:milestones', '🎯', 'Milestones', `Tick what ${S.P.he} can do`],
     ['grow:memories', '✨', 'New things', 'Firsts & memories'], ['grow:trends', '📈', 'Trends', 'Sleep, food, play charts'],
     ['grow:physical', '📏', 'Physical growth', 'Monthly checks & WHO charts'], ['grow:foods', '🥕', 'Foods tried', 'Food diary & reactions'],
     ['grow:vaccines', '💉', 'Vaccines', 'Government schedule'], ['guide', '📖', 'Guide', 'Parenting library'],
@@ -1690,6 +1829,8 @@ async function handleClick(el, a, ev) {
     case 'addChild': openAddChild(); break;
     case 'switchChild': closeSheet(); await selectChild(el.dataset.id); toast(`Switched to ${S.settings?.name || 'child'}`); break;
     case 'removeChild': await removeChild(el.dataset.id); break;
+    case 'askQ': await askQuestion(el.dataset.q); break;
+    case 'askClear': await db.setKVQuiet('chat', []); route(); break;
     case 'backup': S.view = 'settings'; S.settingsTab = 'backup'; closeSheet(); route(); break;
     case 'driveSignIn': await doDriveSignIn(); break;
     case 'driveSyncNow': {
