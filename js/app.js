@@ -20,7 +20,7 @@ const APP_NAME = 'Happy Parenthood';
 // ------------------------------------------------------------------ state
 const S = {
   settings: null, months: 0, stage: null, theme: null, child: 'main', children: [], P: pr('boy'),
-  view: 'home', homeTab: 'log', homeCat: null, settingsTab: null, diaryDate: dateKey(), growTab: 'milestones', trendDays: 7, guideAll: false,
+  view: 'home', homeTab: 'timeline', diaryMode: 'timeline', homeCat: null, settingsTab: null, diaryDate: dateKey(), growTab: 'milestones', trendDays: 7, guideAll: false,
   healthTab: 'illness', healthQ: '', voiceItems: null, voiceText: '',
 };
 const $ = sel => document.querySelector(sel);
@@ -126,7 +126,7 @@ async function selectChild(id, render = true) {
   try { localStorage.setItem('hp-child', id); } catch (e) { /* ignore */ }
   const st = await db.getKV('settings');
   S.settings = st ? { ...DEFAULT_SETTINGS, ...st } : null;
-  S.homeCat = null; S.homeTab = 'log';
+  S.homeCat = null; S.homeTab = 'timeline';
   applyTheme();
   if (S.settings?.dob) await refreshAge();
   if (render) { S.view = 'home'; route(); }
@@ -329,7 +329,8 @@ async function renderHome() {
   const otherRunning = running.filter(e => (CAT[e.type] || 'feel') !== S.homeCat);
 
   let tabBody = '';
-  if (S.homeTab === 'log') tabBody = entryList(list.filter(e => e.date === today).reverse(), 'Nothing logged yet today. Pick a category above and tap a button, or say it with 🎤.');
+  if (S.homeTab === 'timeline') tabBody = timelineHtml(list, today);
+  else if (S.homeTab === 'log') tabBody = entryList(list.filter(e => e.date === today).reverse(), 'Nothing logged yet today. Pick a category above and tap a button, or say it with 🎤.');
   else if (S.homeTab === 'summary') tabBody = homeSummary(sm, S.stage.targets);
   else tabBody = await homeMonth(list, today);
 
@@ -347,7 +348,7 @@ async function renderHome() {
       <button class="pill-btn" data-act="toggle" data-type="${e.type}">Stop</button></div>`).join('')}
     <section class="glance" aria-label="Today at a glance">${glanceForAge(sm)}</section>
     <div class="seg" role="tablist">
-      ${[['log', "Today's log"], ['summary', 'Summary'], ['month', 'This month']].map(([k, l]) => `<button role="tab" data-act="homeTab" data-tab="${k}" aria-pressed="${S.homeTab === k}">${l}</button>`).join('')}
+      ${[['timeline', 'Timeline'], ['log', "Today's log"], ['summary', 'Summary'], ['month', 'This month']].map(([k, l]) => `<button role="tab" data-act="homeTab" data-tab="${k}" aria-pressed="${S.homeTab === k}">${l}</button>`).join('')}
     </div>
     <div class="tab-body">${tabBody}</div>`;
 }
@@ -460,6 +461,32 @@ function entryList(list, emptyText = 'Nothing logged yet.') {
       <span class="muted">${esc(entrySummary(e))}</span>${e.note ? `<br><i class="small">${esc(e.note)}</i>` : ''}
       ${e.data?.photos?.length ? `<span class="thumbs">${e.data.photos.slice(0, 3).map(id => thumbHtml(id)).join('')}</span>` : ''}</span></li>`;
   }).join('')}</ul>`;
+}
+
+// Day timeline: every entry is a point on one line; timed activities draw a bar down
+// to where they ended, and the line shows whether the next one continued straight on.
+function timelineHtml(list, day) {
+  const items = list.filter(e => e.type !== 'ei' && (e.date === day || (typeInfo(e.type).timed && e.end && dateKey(e.end) === day)))
+    .sort((a, b) => a.start - b.start);
+  if (!items.length) return `<p class="empty">Nothing on the timeline yet. Each new activity you log carries on from the last one.</p>`;
+  let lastEnd = null;
+  const rows = [];
+  for (const e of items) {
+    const t = typeInfo(e.type), timed = t.timed && e.end !== e.start, running = t.timed && !e.end;
+    if (lastEnd && e.start - lastEnd >= 5 * 60000) rows.push(`<li class="tl-gap"><span class="tl-t"></span><span class="tl-rail"></span><span class="small muted">${fmtDur((e.start - lastEnd) / 60000)} in between</span></li>`);
+    const cont = lastEnd && Math.abs(e.start - lastEnd) < 60000;
+    const along = t.timed ? items.filter(o => o !== e && typeInfo(o.type).timed && o.end !== o.start && o.start <= e.start && (o.end == null || o.end > e.start) && !(o.start === e.start && o.id > e.id)) : [];
+    const prevDay = e.date !== day;
+    rows.push(`<li class="tl-item c-${CAT[e.type] || 'feel'} ${timed ? 'span' : 'point'} ${running ? 'running' : ''}" data-act="edit" data-id="${e.id}">
+      <span class="tl-t">${fmtTime(e.start)}${prevDay ? '<small>yesterday</small>' : ''}${timed && e.end ? `<small>${fmtTime(e.end)}</small>` : ''}</span>
+      <span class="tl-rail"><i class="tl-dot"></i>${timed ? '<i class="tl-bar"></i>' : ''}</span>
+      <span class="tl-body">${along.length ? `<small class="tl-cont">＋ alongside ${esc(along.map(o => typeInfo(o.type).icon + ' ' + typeInfo(o.type).label).join(', '))}</small>` : cont ? '<small class="tl-cont">↳ carried on</small>' : ''}<b>${t.icon} ${esc(t.label)}</b>
+        ${running ? ` <span class="tl-live">now · <span data-since="${e.start}">${fmtDur(entryMinutes(e))}</span></span>` : ''}
+        <span class="muted small">${esc(entrySummary(e).replace('⏱ running', '').replace(/^ · | · $/g, ''))}</span></span></li>`);
+    if (t.timed && e.end) lastEnd = Math.max(lastEnd || 0, e.end);
+    else if (running) lastEnd = null;
+  }
+  return `<ol class="tline">${rows.join('')}</ol>`;
 }
 
 function tickTimers() {
@@ -661,9 +688,11 @@ async function saveForm(startTimer) {
   const entry = { ...(old || {}), id: id || uid(), type: t.key, start, end: startTimer ? null : end, date: dateKey(start), data,
     note: fd.get('note') || '', by: fd.get('by') || S.settings.me, createdAt: old?.createdAt || Date.now() };
   if (S.voiceEditing) entry.voice = true;
+  const stopped = t.timed && !old ? await endRunningAt(start, entry.id, t.key) : [];
   await db.put(entry);
   closeSheet();
-  toast(startTimer ? `⏱ ${t.label} timer started` : `Saved ${t.icon} ${t.label}`);
+  const msg = (startTimer ? `⏱ ${t.label} timer started` : `Saved ${t.icon} ${t.label}`) + (stopped.length ? ` · ${stoppedText(stopped)}` : '');
+  toast(msg, stopped.length ? [['Undo', async () => { await db.del(entry.id); await resume(stopped); route(); }]] : []);
   route();
   if (S.voiceEditing && S.voiceItems?.length) { S.voiceEditing = false; openVoicePreview(); }
   S.voiceEditing = false;
@@ -725,10 +754,8 @@ async function saveVoiceItems() {
     const data = { ...(it.data || {}) };
     if (['sick', 'medicine'].includes(it.type) && ongoing) data.illness = ongoing.id;
     if (data.foods?.length) await trackFoods(data.foods, dateKey(it.start), '', null);
-    let end = t.timed ? it.end : null;
-    if (end === null && t.timed) { // still going → becomes a running timer (only one sleep at a time)
-      for (const k of ['sleep', 'nap']) for (const r of (await db.byType(k)).filter(e => !e.end)) { r.end = it.start; await db.put(r); }
-    }
+    const end = t.timed ? it.end : null;
+    if (t.timed) await endRunningAt(it.start, null, it.type); // the new activity takes over from whatever was running
     await db.put({ id: uid(), type: it.type, start: it.start, end, date: dateKey(it.start), data, note: it.note ? `🎤 ${it.note}` : '', by: S.settings.me, createdAt: Date.now(), voice: true });
     n++;
   }
@@ -802,7 +829,8 @@ async function renderDiary() {
       <div><b>${sm.meals}</b><span>meals</span></div><div><b>${sm.feeds}</b><span>milk</span></div>
       <div><b>${sm.pee}/${sm.poop}</b><span>pee/poop</span></div><div><b>${fmtDur(sm.outdoorMin)}</b><span>outdoor</span></div>
     </div>${sm.foods.length ? `<p class="small"><b>Foods:</b> ${esc(sm.foods.map(f => `${f.name}${f.qty ? ` (${f.qty} ${f.unit})` : ''}`).join(', '))}</p>` : ''}</div>
-    ${entryList(list.filter(e => e.date === d))}
+    <div class="seg" role="tablist">${[['timeline', 'Timeline'], ['list', 'List']].map(([k, l]) => `<button role="tab" data-act="diaryMode" data-mode="${k}" aria-pressed="${S.diaryMode === k}">${l}</button>`).join('')}</div>
+    ${S.diaryMode === 'timeline' ? timelineHtml(list, d) : entryList(list.filter(e => e.date === d))}
     <button class="btn wide" data-act="openPicker">＋ Add entry to this day</button>`;
 }
 
@@ -1557,7 +1585,7 @@ function renderOnboarding() {
   $('#hdr').innerHTML = '';
   document.body.classList.add('onboarding');
   main().innerHTML = `<section class="onboard">
-    <div class="ob-hero"><img src="icons/icon.svg" alt="" width="88" height="88"><h1>${APP_NAME}</h1>
+    <div class="ob-hero"><img src="icons/icon-192.png" alt="" width="88" height="88" class="ob-logo"><h1>${APP_NAME}</h1>
     <p>Your child's day, health and growth in one place — with a timetable, milestones and guidance that grow with them from baby to teen.</p></div>
     <form id="obForm" class="card">
       <label>Child's name<input name="name" required placeholder="e.g. Aadhi"></label>
@@ -1686,8 +1714,39 @@ function toast(msg, actions = []) {
   clearTimeout(toast._t); toast._t = setTimeout(() => { t.hidden = true; }, actions.length ? 6000 : 2500);
 }
 
-// One-tap timer: first tap starts, second tap stops and logs the duration.
+// What can happen at the same time. A child can't feed or play while asleep, so when a
+// new timed activity starts, any running one that can't go with it ends at that exact
+// moment and the timeline carries on from it. Pairs listed here are left running together.
+// Sleep and nap go with nothing; bonding/talk time goes with anything done awake.
 const SLEEPY = ['sleep', 'nap'];
+const TOGETHER = {
+  meal: ['play', 'walk', 'reading', 'screen', 'study', 'homework'], // eating while playing, on a walk, at story time, with homework
+  breastfeed: ['reading'],          // songs / a story while nursing, but not while playing or on the move
+  play: ['meal', 'floor', 'walk', 'bath'], // floor play, playground on a walk, water play in the bath
+  floor: ['play'],
+  walk: ['meal', 'play', 'exercise'],
+  bath: ['play'],                   // no eating or napping in the bath
+  reading: ['meal', 'breastfeed'],
+  study: ['meal'], homework: ['meal'], screen: ['meal'], exercise: ['walk'],
+};
+function canOverlap(a, b) {
+  if (!a || !b || a === b) return false;
+  if (SLEEPY.includes(a) || SLEEPY.includes(b)) return false;
+  if (a === 'bond' || b === 'bond') return true;
+  return !!(TOGETHER[a]?.includes(b) || TOGETHER[b]?.includes(a));
+}
+async function endRunningAt(at, exceptId = null, newType = null) {
+  const stopped = [];
+  for (const r of await db.all()) {
+    if (r.id === exceptId || r.end || !r.start || !typeInfo(r.type).timed || r.start > at || canOverlap(newType, r.type)) continue;
+    r.end = at; await db.put(r); stopped.push(r);
+  }
+  return stopped;
+}
+const resume = async list => { for (const r of list) { r.end = null; await db.put(r); } };
+const stoppedText = list => list.map(r => `${typeInfo(r.type).icon} ${typeInfo(r.type).label} ended (${fmtDur(entryMinutes(r))})`).join(' · ');
+
+// One-tap timer: first tap starts, second tap stops and logs the duration.
 async function toggleTimer(type, opts = {}) {
   const t = typeInfo(type);
   const running = (await db.byType(type)).find(e => !e.end);
@@ -1703,19 +1762,14 @@ async function toggleTimer(type, opts = {}) {
       ['Undo', async () => { running.end = null; await db.put(running); route(); }],
       ['Add details', () => openForm(type, running)]]);
   }
-  let stopped = null;
-  if (SLEEPY.includes(type)) {
-    for (const k of SLEEPY) {
-      const r = (await db.byType(k)).find(e => !e.end);
-      if (r) { r.end = Date.now(); await db.put(r); stopped = r; }
-    }
-  }
   const now = Date.now();
+  const stopped = await endRunningAt(now, null, type);
   const e = { id: uid(), type, start: now, end: null, date: dateKey(now), data: opts.side ? { side: opts.side } : {}, note: '', by: S.settings.me, createdAt: now };
   await db.put(e);
   route();
-  toast(`${t.icon} ${t.label} started at ${fmtTime(now)}${stopped ? ` · ${typeInfo(stopped.type).label} ended` : ''}`, [
-    ['Undo', async () => { await db.del(e.id); if (stopped) { stopped.end = null; await db.put(stopped); } route(); }]]);
+  const along = (await db.all()).filter(r => r.id !== e.id && !r.end && r.start && typeInfo(r.type).timed);
+  toast(`${t.icon} ${t.label} started at ${fmtTime(now)}${stopped.length ? ` · ${stoppedText(stopped)}` : ''}${along.length ? ` · ${along.map(r => typeInfo(r.type).icon + ' ' + typeInfo(r.type).label).join(', ')} still on` : ''}`, [
+    ['Undo', async () => { await db.del(e.id); await resume(stopped); route(); }]]);
 }
 
 async function askBreastSide() {
@@ -1840,6 +1894,7 @@ async function handleClick(el, a, ev) {
     }
     case 'driveSignOut': if (confirm('Sign out of Google Drive backup on this phone? Your data stays on the phone and in Drive.')) { await driveSignOut(); setBackends({ drive: false }); route(); } break;
     case 'homeTab': S.homeTab = el.dataset.tab; route(); break;
+    case 'diaryMode': S.diaryMode = el.dataset.mode; route(); break;
     case 'healthTab': S.healthTab = el.dataset.tab; route(); break;
     case 'install': doInstall(); break;
     case 'installLater': await db.setKV('installDismissed', Date.now()); route(); break;
