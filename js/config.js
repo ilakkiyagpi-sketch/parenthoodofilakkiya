@@ -2,4 +2,4 @@
 // Paste the OAuth "Web application" Client ID from Google Cloud Console here
 // (it is public information, not a secret). If left empty, it can also be
 // pasted once in the app: Settings → Online backup → One-time setup.
-export const GOOGLE_CLIENT_ID = '';
+export const GOOGLE_CLIENT_ID = '232554107525-bjdggdkl7uoddns5l41tqtu1p44bgc8d.apps.googleusercontent.com';
