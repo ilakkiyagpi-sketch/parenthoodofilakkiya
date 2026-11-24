@@ -20,7 +20,7 @@ const APP_NAME = 'Happy Parenthood';
 // ------------------------------------------------------------------ state
 const S = {
   settings: null, months: 0, stage: null, theme: null, child: 'main', children: [], P: pr('boy'),
-  view: 'home', homeTab: 'timeline', diaryMode: 'timeline', homeCat: null, settingsTab: null, diaryDate: dateKey(), growTab: 'milestones', trendDays: 7, guideAll: false,
+  view: 'home', selMode: false, sel: new Set(), homeTab: 'timeline', diaryMode: 'timeline', homeCat: null, settingsTab: null, diaryDate: dateKey(), growTab: 'milestones', trendDays: 7, guideAll: false,
   healthTab: 'illness', healthQ: '', voiceItems: null, voiceText: '',
 };
 const $ = sel => document.querySelector(sel);
@@ -329,8 +329,9 @@ async function renderHome() {
   const otherRunning = running.filter(e => (CAT[e.type] || 'feel') !== S.homeCat);
 
   let tabBody = '';
-  if (S.homeTab === 'timeline') tabBody = timelineHtml(list, today);
-  else if (S.homeTab === 'log') tabBody = entryList(list.filter(e => e.date === today).reverse(), 'Nothing logged yet today. Pick a category above and tap a button, or say it with 🎤.');
+  const todayN = list.filter(e => e.date === today && e.type !== 'ei').length;
+  if (S.homeTab === 'timeline') tabBody = selBar(todayN) + timelineHtml(list, today);
+  else if (S.homeTab === 'log') tabBody = selBar(todayN) + entryList(list.filter(e => e.date === today).reverse(), 'Nothing logged yet today. Pick a category above and tap a button, or say it with 🎤.');
   else if (S.homeTab === 'summary') tabBody = homeSummary(sm, S.stage.targets);
   else tabBody = await homeMonth(list, today);
 
@@ -456,12 +457,24 @@ function entryList(list, emptyText = 'Nothing logged yet.') {
   if (!list.length) return `<p class="empty">${esc(emptyText)}</p>`;
   return `<ul class="entries">${list.map(e => {
     const t = typeInfo(e.type);
-    return `<li data-act="edit" data-id="${e.id}" class="c-${CAT[e.type] || 'feel'}"><span class="e-icon">${t.icon}</span>
+    return `<li data-act="edit" data-id="${e.id}" class="c-${CAT[e.type] || 'feel'}${S.sel.has(e.id) ? ' picked' : ''}"><span class="e-icon">${t.icon}</span>
       <span class="e-body"><span class="e-top"><b>${esc(t.label)}</b><span class="e-time">${fmtTime(e.start)}${e.end && t.timed && e.end !== e.start ? `–${fmtTime(e.end)}` : ''}</span></span>
       <span class="muted">${esc(entrySummary(e))}</span>${e.note ? `<br><i class="small">${esc(e.note)}</i>` : ''}
       ${e.data?.photos?.length ? `<span class="thumbs">${e.data.photos.slice(0, 3).map(id => thumbHtml(id)).join('')}</span>` : ''}</span></li>`;
   }).join('')}</ul>`;
 }
+
+// Select-to-delete: tap entries on the timeline or list to tick them, then delete together.
+function selBar(n) {
+  if (!n) return '';
+  if (!S.selMode) return `<div class="row between sel-start"><span class="muted small">Tap an entry to edit it</span><button class="btn small" data-act="selStart">☑️ Select to delete</button></div>`;
+  return `<div class="selbar" role="toolbar" aria-label="Delete entries"><span><b id="selN">${S.sel.size}</b> selected</span>
+    <button class="btn small" data-act="selAll">Select all</button><button class="btn small danger" data-act="selDel">🗑️ Delete</button><button class="btn small" data-act="selCancel">Done</button></div>`;
+}
+const updateSel = () => {
+  document.querySelectorAll('#main [data-act="edit"][data-id]').forEach(x => x.classList.toggle('picked', S.sel.has(x.dataset.id)));
+  const n = $('#selN'); if (n) n.textContent = S.sel.size;
+};
 
 // Day timeline: every entry is a point on one line; timed activities draw a bar down
 // to where they ended, and the line shows whether the next one continued straight on.
@@ -477,7 +490,7 @@ function timelineHtml(list, day) {
     const cont = lastEnd && Math.abs(e.start - lastEnd) < 60000;
     const along = t.timed ? items.filter(o => o !== e && typeInfo(o.type).timed && o.end !== o.start && o.start <= e.start && (o.end == null || o.end > e.start) && !(o.start === e.start && o.id > e.id)) : [];
     const prevDay = e.date !== day;
-    rows.push(`<li class="tl-item c-${CAT[e.type] || 'feel'} ${timed ? 'span' : 'point'} ${running ? 'running' : ''}" data-act="edit" data-id="${e.id}">
+    rows.push(`<li class="tl-item c-${CAT[e.type] || 'feel'} ${timed ? 'span' : 'point'} ${running ? 'running' : ''}${S.sel.has(e.id) ? ' picked' : ''}" data-act="edit" data-id="${e.id}">
       <span class="tl-t">${fmtTime(e.start)}${prevDay ? '<small>yesterday</small>' : ''}${timed && e.end ? `<small>${fmtTime(e.end)}</small>` : ''}</span>
       <span class="tl-rail"><i class="tl-dot"></i>${timed ? '<i class="tl-bar"></i>' : ''}</span>
       <span class="tl-body">${along.length ? `<small class="tl-cont">＋ alongside ${esc(along.map(o => typeInfo(o.type).icon + ' ' + typeInfo(o.type).label).join(', '))}</small>` : cont ? '<small class="tl-cont">↳ carried on</small>' : ''}<b>${t.icon} ${esc(t.label)}</b>
@@ -830,6 +843,7 @@ async function renderDiary() {
       <div><b>${sm.pee}/${sm.poop}</b><span>pee/poop</span></div><div><b>${fmtDur(sm.outdoorMin)}</b><span>outdoor</span></div>
     </div>${sm.foods.length ? `<p class="small"><b>Foods:</b> ${esc(sm.foods.map(f => `${f.name}${f.qty ? ` (${f.qty} ${f.unit})` : ''}`).join(', '))}</p>` : ''}</div>
     <div class="seg" role="tablist">${[['timeline', 'Timeline'], ['list', 'List']].map(([k, l]) => `<button role="tab" data-act="diaryMode" data-mode="${k}" aria-pressed="${S.diaryMode === k}">${l}</button>`).join('')}</div>
+    ${selBar(list.filter(e => e.date === d).length)}
     ${S.diaryMode === 'timeline' ? timelineHtml(list, d) : entryList(list.filter(e => e.date === d))}
     <button class="btn wide" data-act="openPicker">＋ Add entry to this day</button>`;
 }
@@ -1442,7 +1456,11 @@ async function renderSettings() {
   if (tab === 'data') body = `<section class="card"><div class="label">Data on this phone for ${esc(s.name)}: ${(await db.all()).length} entries</div>
       <div class="row wrap"><button class="btn" data-act="export">⬇️ Backup file</button><button class="btn" data-act="csv">⬇️ Export CSV</button>
       <label class="btn">⬆️ Restore file<input type="file" id="importFile" accept="application/json" hidden></label></div>
-      <div class="row wrap"><button class="btn" data-act="demo">Load sample data</button><button class="btn danger" data-act="wipe">Erase this child's data</button></div></section>`;
+      <div class="row wrap"><button class="btn" data-act="demo">Load sample data</button><button class="btn danger" data-act="wipe">Erase this child's data</button></div></section>
+    <section class="card"><div class="label">🧹 Delete old entries</div>
+      <p class="muted small">Removes ${esc(s.name)}'s log entries (feeds, sleep, play, health logs…) that started before this time. Settings, timetable and milestone ticks are kept. Deleted entries are also removed from the Google backup at the next sync.</p>
+      <label>Delete everything before<input type="datetime-local" id="cutAt" value="2026-11-23T16:00"></label>
+      <div class="row wrap"><button class="btn danger" data-act="cutOld">🗑️ Delete entries before this</button>${(await db.all()).some(e => e.demo) ? '<button class="btn" data-act="cutDemo">Remove sample data only</button>' : ''}</div></section>`;
   if (tab === 'install') body = `<section class="card install-card"><div><b>📲 Install ${APP_NAME} as an app</b><br><small>Gets its own icon on the home screen and opens full screen like any other app.</small></div><button class="btn primary small" data-act="install">Install</button></section>`;
   if (tab === 'about') body = `<section class="card small"><b>${APP_NAME}</b> is a personal, offline-first app. Data only leaves the phone if you turn on the online backup, and then it goes only to your own Google Sheet and Drive.
       Voice typing uses your phone browser's built-in speech service. Growth charts use the WHO Child Growth Standards (0–5 years) and WHO Growth Reference 2007 (5–19 years). Vaccines follow India's Universal Immunization Programme. Guidance is based on WHO, AAP/AASM, CDC, IAP, the Gottman Institute and Harvard's Center on the Developing Child — always follow your paediatrician.</section>`;
@@ -1827,7 +1845,7 @@ async function onClick(ev) {
 
 async function handleClick(el, a, ev) {
   switch (a) {
-    case 'view': S.view = el.dataset.view; if (S.view === 'settings') S.settingsTab = null; closeSheet(); route(); break;
+    case 'view': S.selMode = false; S.sel.clear(); S.view = el.dataset.view; if (S.view === 'settings') S.settingsTab = null; closeSheet(); route(); break;
     case 'goGrow': S.view = 'grow'; S.growTab = el.dataset.tab; closeSheet(); route(); break;
     case 'close': closeSheet(); break;
     case 'openPicker': openPicker(); break;
@@ -1836,6 +1854,7 @@ async function handleClick(el, a, ev) {
     case 'behaviour': openBehaviour(el.dataset.kind); break;
     case 'edit': {
       ev.stopPropagation();
+      if (S.selMode) { const id = el.dataset.id; S.sel.has(id) ? S.sel.delete(id) : S.sel.add(id); updateSel(); break; }
       const e = await db.get(el.dataset.id);
       if (!e) return;
       if (e.type === 'behaviour') openBehaviour(e.data.kind, e);
@@ -1895,6 +1914,24 @@ async function handleClick(el, a, ev) {
     case 'driveSignOut': if (confirm('Sign out of Google Drive backup on this phone? Your data stays on the phone and in Drive.')) { await driveSignOut(); setBackends({ drive: false }); route(); } break;
     case 'homeTab': S.homeTab = el.dataset.tab; route(); break;
     case 'diaryMode': S.diaryMode = el.dataset.mode; route(); break;
+    case 'selStart': S.selMode = true; S.sel.clear(); route(); break;
+    case 'selCancel': S.selMode = false; S.sel.clear(); route(); break;
+    case 'selAll': {
+      const ids = [...new Set([...document.querySelectorAll('#main [data-act="edit"][data-id]')].map(x => x.dataset.id))];
+      if (ids.every(id => S.sel.has(id))) S.sel.clear(); else ids.forEach(id => S.sel.add(id));
+      updateSel(); break;
+    }
+    case 'selDel': {
+      if (!S.sel.size) return toast('Tap entries to select them first');
+      const gone = (await Promise.all([...S.sel].map(id => db.get(id)))).filter(Boolean);
+      const by = {};
+      for (const e of gone) { const l = typeInfo(e.type).label; by[l] = (by[l] || 0) + 1; }
+      if (!confirm(`Delete ${gone.length} entr${gone.length === 1 ? 'y' : 'ies'}?\n\n${Object.entries(by).map(([l, n]) => `${n} × ${l}`).join('\n')}\n\nThis cannot be undone.`)) return;
+      for (const e of gone) await db.del(e.id);
+      S.sel.clear(); S.selMode = false;
+      toast(`🗑️ Deleted ${gone.length} entr${gone.length === 1 ? 'y' : 'ies'}`); route();
+      break;
+    }
     case 'healthTab': S.healthTab = el.dataset.tab; route(); break;
     case 'install': doInstall(); break;
     case 'installLater': await db.setKV('installDismissed', Date.now()); route(); break;
@@ -1961,7 +1998,7 @@ async function handleClick(el, a, ev) {
       await db.put(i); toast(`🌈 So glad ${S.P.he} is better!`); route(); break;
     }
     case 'illnessView': openIllness(el.dataset.id); break;
-    case 'day': S.diaryDate = addDays(S.diaryDate, Number(el.dataset.delta)); if (S.diaryDate > dateKey()) S.diaryDate = dateKey(); route(); break;
+    case 'day': S.sel.clear(); S.diaryDate = addDays(S.diaryDate, Number(el.dataset.delta)); if (S.diaryDate > dateKey()) S.diaryDate = dateKey(); route(); break;
     case 'growTab': S.growTab = el.dataset.tab; route(); break;
     case 'trendDays': S.trendDays = Number(el.dataset.days); route(); break;
     case 'editRoutine': openRoutineEditor(); break;
@@ -1986,6 +2023,20 @@ async function handleClick(el, a, ev) {
     }
     case 'csv': exportCSV(); break;
     case 'demo': loadDemo(); break;
+    case 'cutOld': case 'cutDemo': {
+      const cut = fromLocalInput($('#cutAt')?.value);
+      if (a === 'cutOld' && !cut) return alert('Pick a date and time first.');
+      const gone = (await db.all()).filter(e => a === 'cutDemo' ? e.demo : e.start < cut);
+      if (!gone.length) return toast('Nothing to delete');
+      const by = {};
+      for (const e of gone) { const l = typeInfo(e.type).label; by[l] = (by[l] || 0) + 1; }
+      const list = Object.entries(by).sort((x, y) => y[1] - x[1]).map(([l, n]) => `${n} × ${l}`).join('\n');
+      const what = a === 'cutDemo' ? 'sample entries' : `entries before ${new Date(cut).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}`;
+      if (!confirm(`Delete ${gone.length} ${what}?\n\n${list}\n\nThis cannot be undone (make a backup file first if unsure).`)) return;
+      for (const e of gone) await db.del(e.id);
+      toast(`🗑️ Deleted ${gone.length} entries`); route();
+      break;
+    }
     case 'wipe':
       if (confirm('Erase ALL data on this device? Make a backup first. This cannot be undone.') && prompt('Type ERASE to confirm') === 'ERASE') {
         await db.clearAll(); location.reload();
@@ -1996,7 +2047,7 @@ async function handleClick(el, a, ev) {
 
 async function onChange(ev) {
   const t = ev.target;
-  if (t.id === 'diaryDate' && t.value) { S.diaryDate = t.value > dateKey() ? dateKey() : t.value; route(); }
+  if (t.id === 'diaryDate' && t.value) { S.sel.clear(); S.diaryDate = t.value > dateKey() ? dateKey() : t.value; route(); }
   if (t.id === 'guideAll') { S.guideAll = t.checked; route(); }
   if (t.id === 'importFile' && t.files[0]) importJSON(t.files[0]);
   if (t.id === 'vLang') { S.settings.voiceLang = t.value; await db.setKV('settings', S.settings); }

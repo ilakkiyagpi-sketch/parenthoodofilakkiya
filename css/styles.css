@@ -491,3 +491,12 @@ body:not(.onboarding) { background: transparent; }
 .tl-gap { min-height: 26px !important; }
 .tl-gap .tl-rail::before { background: repeating-linear-gradient(180deg, var(--border) 0 4px, transparent 4px 8px); }
 .tl-gap > span:last-child { align-self: center; padding-left: 8px; font-style: italic; }
+
+/* ---------- select to delete ---------- */
+.sel-start { margin: 4px 0; }
+.selbar { position: fixed; left: 12px; right: 12px; bottom: calc(74px + env(safe-area-inset-bottom)); z-index: 11; max-width: 560px; margin: 0 auto !important; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; background: var(--surface); border: 2px solid var(--high); border-radius: 16px; padding: 8px 10px; margin: 6px 0; box-shadow: var(--shadow); }
+.selbar > span { flex: 1 0 auto; font-size: .9rem; }
+.selbar .btn.danger { background: var(--high); color: var(--bg); }
+body:has(.selbar) .main { padding-bottom: 150px; }
+li.picked .tl-body, .entries li.picked { outline: 3px solid var(--high); outline-offset: -1px; }
+li.picked .tl-body::before, .entries li.picked .e-body::before { content: "✓ selected"; color: var(--high); font-weight: 800; font-size: .72rem; display: block; }
