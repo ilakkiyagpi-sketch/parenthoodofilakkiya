@@ -82,6 +82,11 @@ On **Today**, tap **Nap**, **Night sleep**, **Eating**, **Bath**, **Play**, **Wa
 - After stopping **Eating**, the form opens so you can add what he ate and how much.
 - Every action shows **Undo** and **Add details** for a few seconds.
 
+## Deleting entries
+- **Pick and delete:** on the Home Timeline / Today's log, or in the **Diary** (choose any day with the calendar), tap **☑️ Select to delete**, tap the entries to tick them (or **Select all** for the whole day), then **🗑️ Delete**. A confirmation lists what will go.
+- **Everything before a time:** Settings → Files & data → **🧹 Delete old entries**.
+- Deletions also reach the Google backup at the next sync.
+
 ## Your data & backup
 
 ### Google Drive (recommended): "Sign in with Google"
