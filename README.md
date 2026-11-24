@@ -69,9 +69,16 @@ It then works offline like a normal app.
 ## One-tap timers
 On **Today**, tap **Nap**, **Night sleep**, **Eating**, **Bath**, **Play**, **Walk**, **Learning**, **Story time**, **Breastfeed**, **Crawl time**, **Oil massage**, **Screen** (and later **Homework**, **Sport**) once to start a live timer, and tap the same button again to stop. The duration is logged automatically.
 - Timers keep running even if you close the app or the phone restarts.
-- **One thing at a time:** starting any timed activity ends whatever was still running, at that exact minute. Start a **Nap** after a feed or play time and the feed/play stops (he can't feed or play while asleep); start a feed during a nap and the nap ends. **Woke up** stops any running sleep. Undo brings the stopped timer back.
+- **What can happen together:** starting a timed activity ends any running one that can't happen at the same time, at that exact minute; ones that can go together keep running. Undo brings stopped timers back.
+  - **Sleep / nap** go with nothing: starting a nap ends feeding, play, eating, bath…; starting a feed or play during a nap ends the nap.
+  - **Eating** can go with play, a walk, a story, screen time, learning or homework.
+  - **Breastfeeding** only goes with a story / songs, not with play, a walk or the bath.
+  - **Bath** only goes with (water) play: no eating or napping in the bath.
+  - **Play** goes with eating, floor time, a walk and the bath; **walk** with eating, play and sport.
+  - **Talk / bonding time** goes with anything done awake.
+  - The list is `TOGETHER` in `js/app.js`, easy to change.
 - Adding a past activity in the form (e.g. play from 3:00) ends a timer that was running since before 3:00 at 3:00.
-- **Timeline** (Home and Diary): every entry is a point on one line; timed activities draw a bar to where they ended, "↳ carried on" marks one that started the moment the last ended, and gaps show the time in between.
+- **Timeline** (Home and Diary): every entry is a point on one line; timed activities draw a bar to where they ended, "↳ carried on" marks one that started the moment the last ended, "＋ alongside" marks one happening together with another, and gaps show the time in between.
 - After stopping **Eating**, the form opens so you can add what he ate and how much.
 - Every action shows **Undo** and **Add details** for a few seconds.
 
