@@ -1442,7 +1442,11 @@ async function renderSettings() {
   if (tab === 'data') body = `<section class="card"><div class="label">Data on this phone for ${esc(s.name)}: ${(await db.all()).length} entries</div>
       <div class="row wrap"><button class="btn" data-act="export">⬇️ Backup file</button><button class="btn" data-act="csv">⬇️ Export CSV</button>
       <label class="btn">⬆️ Restore file<input type="file" id="importFile" accept="application/json" hidden></label></div>
-      <div class="row wrap"><button class="btn" data-act="demo">Load sample data</button><button class="btn danger" data-act="wipe">Erase this child's data</button></div></section>`;
+      <div class="row wrap"><button class="btn" data-act="demo">Load sample data</button><button class="btn danger" data-act="wipe">Erase this child's data</button></div></section>
+    <section class="card"><div class="label">🧹 Delete old entries</div>
+      <p class="muted small">Removes ${esc(s.name)}'s log entries (feeds, sleep, play, health logs…) that started before this time. Settings, timetable and milestone ticks are kept. Deleted entries are also removed from the Google backup at the next sync.</p>
+      <label>Delete everything before<input type="datetime-local" id="cutAt" value="2026-11-23T16:00"></label>
+      <div class="row wrap"><button class="btn danger" data-act="cutOld">🗑️ Delete entries before this</button>${(await db.all()).some(e => e.demo) ? '<button class="btn" data-act="cutDemo">Remove sample data only</button>' : ''}</div></section>`;
   if (tab === 'install') body = `<section class="card install-card"><div><b>📲 Install ${APP_NAME} as an app</b><br><small>Gets its own icon on the home screen and opens full screen like any other app.</small></div><button class="btn primary small" data-act="install">Install</button></section>`;
   if (tab === 'about') body = `<section class="card small"><b>${APP_NAME}</b> is a personal, offline-first app. Data only leaves the phone if you turn on the online backup, and then it goes only to your own Google Sheet and Drive.
       Voice typing uses your phone browser's built-in speech service. Growth charts use the WHO Child Growth Standards (0–5 years) and WHO Growth Reference 2007 (5–19 years). Vaccines follow India's Universal Immunization Programme. Guidance is based on WHO, AAP/AASM, CDC, IAP, the Gottman Institute and Harvard's Center on the Developing Child — always follow your paediatrician.</section>`;
@@ -1986,6 +1990,20 @@ async function handleClick(el, a, ev) {
     }
     case 'csv': exportCSV(); break;
     case 'demo': loadDemo(); break;
+    case 'cutOld': case 'cutDemo': {
+      const cut = fromLocalInput($('#cutAt')?.value);
+      if (a === 'cutOld' && !cut) return alert('Pick a date and time first.');
+      const gone = (await db.all()).filter(e => a === 'cutDemo' ? e.demo : e.start < cut);
+      if (!gone.length) return toast('Nothing to delete');
+      const by = {};
+      for (const e of gone) { const l = typeInfo(e.type).label; by[l] = (by[l] || 0) + 1; }
+      const list = Object.entries(by).sort((x, y) => y[1] - x[1]).map(([l, n]) => `${n} × ${l}`).join('\n');
+      const what = a === 'cutDemo' ? 'sample entries' : `entries before ${new Date(cut).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}`;
+      if (!confirm(`Delete ${gone.length} ${what}?\n\n${list}\n\nThis cannot be undone (make a backup file first if unsure).`)) return;
+      for (const e of gone) await db.del(e.id);
+      toast(`🗑️ Deleted ${gone.length} entries`); route();
+      break;
+    }
     case 'wipe':
       if (confirm('Erase ALL data on this device? Make a backup first. This cannot be undone.') && prompt('Type ERASE to confirm') === 'ERASE') {
         await db.clearAll(); location.reload();
