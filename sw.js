@@ -1,6 +1,6 @@
 // Offline support: cache the app shell, serve it when offline, refresh in background.
-const CACHE = 'happy-parenthood-v4';
-const SHELL = ['./', 'index.html', 'css/styles.css', 'js/app.js', 'js/db.js', 'js/util.js', 'js/catalog.js', 'js/stages.js', 'js/guide.js', 'js/charts.js', 'js/sync.js', 'js/photos.js', 'js/voice.js', 'js/devdata.js', 'js/growth.js', 'js/who-data.js', 'js/pronouns.js',
+const CACHE = 'happy-parenthood-v6';
+const SHELL = ['./', 'index.html', 'css/styles.css', 'js/app.js', 'js/db.js', 'js/util.js', 'js/catalog.js', 'js/stages.js', 'js/guide.js', 'js/charts.js', 'js/sync.js', 'js/photos.js', 'js/voice.js', 'js/devdata.js', 'js/growth.js', 'js/who-data.js', 'js/pronouns.js', 'js/drive.js', 'js/config.js', 'js/assistant.js', 'js/assistant-kb.js',
   'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/apple-touch-icon.png'];
 
 self.addEventListener('install', e => {

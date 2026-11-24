@@ -1,0 +1,195 @@
+// Knowledge base for the offline "Ask" assistant (no AI, no internet needed).
+// Each entry: t = topic, q = question, k = extra keywords (incl. Tamil/Tanglish words),
+// min/max = age window in months, a = answer lines ({name} {he} {his} {him} {age} are filled in),
+// src = source of the guidance. General information only — not a substitute for a doctor.
+export const KB = [
+  // ---------------- SLEEP ----------------
+  { t: 'Sleep', q: 'How much sleep does my child need?', k: 'sleep hours enough total how long nap night thookam', min: 0, max: 240, src: 'AASM / AAP',
+    a: ['Recommended sleep in 24 hours (including naps):', '• 4–12 months: 12–16 h', '• 1–2 years: 11–14 h', '• 3–5 years: 10–13 h', '• 6–12 years: 9–12 h', '• 13–18 years: 8–10 h', 'Tip: ask "Is {he} sleeping enough?" and I will check {his} logs.'] },
+  { t: 'Sleep', q: 'How many naps should a baby take?', k: 'nap naps daytime sleep schedule wake window', min: 0, max: 48,
+    a: ['Typical naps:', '• 0–3 months: 4–6 short naps', '• 4–6 months: 3 naps', '• 6–12 months: 2 naps (sometimes a 3rd catnap until ~9 months)', '• 12–18 months: moves from 2 naps to 1', '• 18 months–3 years: 1 nap of 1–3 hours', '• 3–5 years: many children drop the nap; keep quiet time instead.', 'Wake windows at 9–12 months are usually about 2.5–3.5 hours.'] },
+  { t: 'Sleep', q: 'My baby wakes up many times at night. What can I do?', k: 'night waking wakes up frequently cries at night sleep regression not sleeping', min: 4, max: 36,
+    a: ['Night waking is common, especially during teething, illness, growth spurts and new skills like crawling or standing.', '• Keep a calm, same-every-night bedtime routine (bath → feed → book → song → lights out).', '• Put {him} down drowsy but awake sometimes so {he} learns to fall asleep alone.', '• Make sure {he} has enough daytime food and isn\'t over-tired (an earlier bedtime often helps).', '• Keep night feeds dark, quiet and boring.', '• Check the Sleep and Feeding logs for patterns: is {he} sleeping too late, or napping too long late in the day?', 'See a doctor if there is snoring with pauses in breathing, fever, ear pain or poor weight gain.'] },
+  { t: 'Sleep', q: 'What is a good bedtime routine?', k: 'bedtime routine put to sleep how to make baby sleep', min: 3, max: 144,
+    a: ['A short, predictable routine (20–30 minutes) every night:', '1. Bath or wash', '2. Night clothes, brush teeth', '3. 1–3 books or a story', '4. Song / prayer / cuddle', '5. Lights out, same time every night', 'Dim lights and no screens for at least an hour before bed. Morning daylight and outdoor play help night sleep.'] },
+  { t: 'Sleep', q: 'Safe sleep for babies', k: 'safe sleep sids position back cot co-sleeping pillow', min: 0, max: 12, src: 'AAP / WHO',
+    a: ['• Always put a baby to sleep on the back, on a firm flat surface.', '• No pillows, soft toys, bumpers or loose blankets in the sleep space.', '• Room-sharing (baby\'s own cot near your bed) is recommended for at least 6 months.', '• Don\'t let the baby get too hot; no smoking near the baby.', '• Once {he} can roll both ways, it\'s fine if {he} rolls onto the tummy alone.'] },
+  { t: 'Sleep', q: 'My child is scared of the dark / has nightmares', k: 'nightmares scared dark fear bad dreams night terrors', min: 24, max: 144,
+    a: ['Fears at night are normal from 2–3 years as imagination grows.', '• Use a small night light and a comfort toy.', '• Calmly reassure; don\'t laugh at the fear.', '• Avoid scary stories/screens in the evening.', '• Night terrors (screaming, eyes open, not responding, no memory next day) usually pass — keep {him} safe, don\'t wake {him}.'] },
+
+  { t: 'Sleep', q: 'My baby cries a lot — how do I settle {him}?', k: 'cry fussy settle soothe calm colic inconsolable crying', min: 0, max: 24,
+    a: ['Check the basics: hungry, tired (watch for yawning, rubbing eyes), wet nappy, too hot/cold, gas, teething.', 'Soothing: hold close, gentle rocking or walking, white noise or humming, a warm bath, a calm dim room.', 'Crying that peaks at 6–8 weeks and settles by 3–4 months is common (colic).', 'It is okay to put the baby safely in the cot and take a few minutes to calm yourself. Never shake a baby.', '🚨 See a doctor if crying is unusual and high-pitched, with fever, vomiting, poor feeding or a swollen tummy.'] },
+
+  // ---------------- FEEDING ----------------
+  { t: 'Feeding', q: 'How often should a baby breastfeed?', k: 'breastfeed breastfeeding how often nursing milk feeds per day paal', min: 0, max: 24, src: 'WHO',
+    a: ['• Newborns: on demand, about 8–12 times in 24 hours.', '• 6–12 months: breast milk is still important, alongside solid food — usually 4–6 feeds a day.', '• WHO recommends breastfeeding until 2 years or beyond if you and your baby wish.', 'Signs of enough milk: 6+ wet nappies a day and steady weight gain.'] },
+  { t: 'Feeding', q: 'Is my baby getting enough milk?', k: 'enough milk low supply hungry weight gain wet diapers', min: 0, max: 12,
+    a: ['Good signs: 6 or more wet nappies a day, regular stools, alert and active, and steady weight gain on the growth chart.', 'Ask "How many wet nappies today?" and I will check the log.', 'See a doctor if there are fewer than 4 wet nappies, dark urine, a sunken soft spot, or poor weight gain.'] },
+  { t: 'Feeding', q: 'Which side should I breastfeed from?', k: 'side left right breast switch sides', min: 0, max: 24,
+    a: ['Start each feed on the side you finished on last time (or the side that feels fuller). The app highlights the suggested side when you tap Breastfeed.', 'Let the baby finish one side before offering the other — the later milk is richer.'] },
+  { t: 'Feeding', q: 'When and how to start solid foods?', k: 'solids start weaning complementary feeding first food 6 months saapadu', min: 4, max: 9, src: 'WHO',
+    a: ['WHO: start solid foods at about 6 months, while continuing breast milk.', 'Signs of readiness: sits with support, good head control, interested in food, no longer pushes everything out with the tongue.', 'Start with soft mashed foods: ragi porridge, rice-dal mash, mashed vegetables, banana, and iron-rich foods (dal, egg yolk, meat, green leaves).', 'One new food every 2–3 days to watch for reactions. No salt, sugar or honey before 1 year.'] },
+  { t: 'Feeding', q: 'How much food should my baby eat?', k: 'how much food quantity portion meals per day bowl amount', min: 6, max: 24, src: 'WHO',
+    a: ['WHO guidance:', '• 6–8 months: 2–3 meals a day, starting with 2–3 spoonfuls and slowly increasing.', '• 9–11 months: 3–4 meals + 1–2 snacks; about ½ bowl (250 ml) per meal.', '• 12–24 months: 3–4 meals + 1–2 snacks; about ¾ to 1 bowl per meal.', 'Let {him} decide how much — you decide what and when. Appetite changes day to day.'] },
+  { t: 'Feeding', q: 'Indian food ideas for babies and toddlers', k: 'food ideas recipes what to feed menu indian ragi idli khichdi', min: 6, max: 48,
+    a: ['Ideas (soft, mashed or finger-sized, no added salt/sugar under 1 year):', '• Breakfast: ragi porridge, soft idli, dosa pieces, upma, oats with fruit', '• Lunch/dinner: dal rice with ghee, khichdi, curd rice, vegetable mash, soft chapati with dal', '• Protein: egg, fish, chicken (well cooked), paneer, dal, curd', '• Snacks: banana, steamed apple/pear, papaya, boiled sweet potato, chikoo', 'Add a little ghee for energy. Include iron foods daily.'] },
+  { t: 'Feeding', q: 'My child refuses to eat / is a picky eater', k: 'picky eater refuse refuses food not eating fussy eating eats less spits', min: 9, max: 144,
+    a: ['Refusing food is very common, especially 1–5 years — appetite naturally slows after the first year.', '• Offer a new food 10–15 times; refusal isn\'t dislike.', '• Eat together; no screens at meals.', '• Don\'t force, bribe or punish. Keep meals 20–30 min, then calmly end.', '• Offer small portions and let {him} self-feed.', '• Avoid filling up on milk, juice or biscuits between meals.', 'See a doctor if {he} is losing weight, very tired, or has vomiting/diarrhoea.'] },
+  { t: 'Feeding', q: 'Finger foods and choking', k: 'choking finger food gag gagging baby led weaning safe', min: 6, max: 48,
+    a: ['Gagging (coughing, going red) is normal while learning; choking is silent and needs action.', 'Safe finger foods: soft steamed carrot sticks, banana, soft idli, chapati strips, avocado, soft paneer.', 'Avoid: whole grapes (cut lengthwise), whole nuts, popcorn, hard raw vegetables, big pieces of meat.', 'Always sit {him} upright and stay with {him} while eating. Learn infant first aid.'] },
+  { t: 'Feeding', q: 'Can my baby drink water, cow milk, juice?', k: 'water cow milk juice tea drink bottle', min: 0, max: 36,
+    a: ['• Under 6 months: breast milk or formula only — no water.', '• 6–12 months: small sips of water with meals.', '• Cow milk as a main drink: from 12 months (not before).', '• Fruit juice: not needed; give whole fruit instead. No tea/coffee or soft drinks.'] },
+  { t: 'Feeding', q: 'Food allergy signs', k: 'allergy allergic reaction rash after food egg peanut milk swelling', min: 4, max: 60,
+    a: ['Signs after a new food: rash/hives, swelling of lips or face, vomiting, diarrhoea, or wheezing.', 'Mild rash: stop that food and talk to your doctor.', '🚨 Swelling of the face/tongue or trouble breathing is an emergency — go to hospital now (call 108).', 'The Foods tab records reactions you note in the meal log.'] },
+  { t: 'Feeding', q: 'Does my child need vitamins or iron?', k: 'vitamin d iron supplement drops deficiency anaemia', min: 0, max: 144,
+    a: ['• Breastfed babies are often advised vitamin D drops — ask your paediatrician.', '• Iron becomes important from 6 months: dal, green leafy vegetables, ragi, egg, meat; vitamin C (fruit) helps absorption.', '• Too much cow milk (more than ~500 ml/day) can cause iron deficiency in toddlers.', 'Give supplements only as advised by your doctor.'] },
+
+  // ---------------- HEALTH ----------------
+  { t: 'Health', q: 'When is a fever dangerous?', k: 'fever temperature high hot kaichal when to see doctor dangerous', min: 0, max: 240, src: 'AAP / IAP',
+    a: ['Fever is 100.4°F (38°C) or more. Fever itself fights infection; how the child looks matters most.', '🚨 See a doctor urgently if:', '• Baby under 3 months with any fever', '• Fever above 104°F (40°C), or fever lasting more than 2–3 days', '• Very sleepy, hard to wake, floppy, or unusually irritable', '• Breathing fast/difficult, rash that doesn\'t fade when pressed, fits, or signs of dehydration', 'Use paracetamol only in the dose your doctor gives for {his} weight. Track temperatures in the Health tab.'] },
+  { t: 'Health', q: 'Cold and cough — what can I do at home?', k: 'cold cough runny nose blocked nose sneezing congestion', min: 0, max: 240,
+    a: ['Most colds are viral and get better in 7–10 days.', '• Saline nose drops and gentle suction for blocked nose (especially before feeds and sleep).', '• Keep feeding often; plenty of fluids.', '• Raise the head of the bed slightly for older children (not pillows for babies).', '• No cough syrups for children under 4 unless your doctor prescribes them. No honey under 1 year.', 'See a doctor for fast breathing, chest pulling in, high fever, ear pain or if it lasts over 10 days.'] },
+  { t: 'Health', q: 'Loose motions / diarrhoea and vomiting', k: 'diarrhoea diarrhea loose motion vomiting vomit stomach dehydration ors', min: 0, max: 240,
+    a: ['The main risk is dehydration.', '• Keep breastfeeding; give ORS in small, frequent sips (as per pack/doctor).', '• Continue normal food once vomiting settles.', '• Zinc is often prescribed in India for diarrhoea — ask your doctor.', '🚨 See a doctor quickly if: no urine for 6–8 hours, very sleepy, sunken eyes, blood in stool, green vomit, or can\'t keep fluids down.'] },
+  { t: 'Health', q: 'Constipation in babies and children', k: 'constipation hard stool not pooping straining', min: 0, max: 144,
+    a: ['• Breastfed babies may poop only every few days — fine if stools are soft.', '• After starting solids: offer water, fruits (papaya, pear, prunes), vegetables and whole grains.', '• Toddlers: regular toilet time after meals, active play, less cow milk.', 'See a doctor if there is blood, pain, a swollen tummy, or it lasts more than 2 weeks.'] },
+  { t: 'Health', q: 'Teething symptoms and relief', k: 'teething teeth tooth pal gums drooling first tooth', min: 3, max: 36,
+    a: ['First teeth usually appear between 6 and 10 months (some earlier or later); all 20 by about 2½–3 years.', 'Signs: drooling, chewing, sore gums, fussiness.', 'Relief: chilled (not frozen) teether, rubbing gums with a clean finger, cold soft food.', 'Teething does NOT cause high fever or diarrhoea — see a doctor if those happen. Avoid teething gels with benzocaine and amber necklaces.'] },
+  { t: 'Health', q: 'How to care for my child\'s teeth', k: 'brush teeth toothpaste dental cavities fluoride dentist', min: 4, max: 240,
+    a: ['• From the first tooth: brush twice a day with a soft brush and a smear (rice-grain size) of fluoride toothpaste.', '• From 3 years: a pea-sized amount.', '• No bottle in bed; limit sweets and sticky snacks.', '• First dental visit around the first birthday.', 'Log brushing with the 🪥 button.'] },
+  { t: 'Health', q: 'Rashes and skin problems', k: 'rash skin eczema diaper rash nappy rash itchy spots heat rash', min: 0, max: 240,
+    a: ['• Nappy rash: change often, air time, barrier cream (zinc).', '• Heat rash: loose cotton clothes, keep cool.', '• Eczema: fragrance-free moisturiser twice daily, short lukewarm baths.', '🚨 A rash that doesn\'t fade when you press a glass on it, with fever, needs urgent medical care.'] },
+  { t: 'Health', q: 'Ear infection signs', k: 'ear pain ear infection pulling ear', min: 3, max: 120,
+    a: ['Signs: ear pain, pulling the ear, crying when lying down, fever, poor sleep.', 'See a doctor — they will check if antibiotics are needed. Pain relief as advised. Never put oil or anything inside the ear.'] },
+  { t: 'Health', q: 'How to give medicine correctly', k: 'medicine dose syrup how to give drops antibiotic course', min: 0, max: 240,
+    a: ['• Use the measuring syringe/cup that comes with the medicine, not kitchen spoons.', '• Doses depend on weight — follow the prescription exactly.', '• Finish antibiotic courses even if {he} feels better.', '• Log each dose with "Gave now" in the Health tab; it shows when the next dose is due.'] },
+  { t: 'Health', q: 'When should I take my child to the hospital immediately?', k: 'emergency hospital urgent danger signs serious', min: 0, max: 240,
+    a: ['🚨 Go to the nearest hospital / call 108 or 112 if:', '• Difficulty breathing, blue lips, or chest pulling in', '• Fits (seizure), unconscious or very hard to wake', '• Baby under 3 months with fever', '• Signs of dehydration (no urine 6–8 h, very dry mouth)', '• Severe allergic reaction (face/tongue swelling)', '• Swallowed a button battery, magnet, medicine or poison', '• Head injury with vomiting, sleepiness or unusual behaviour', '• Severe burns or heavy bleeding'] },
+
+  // ---------------- GROWTH ----------------
+  { t: 'Growth', q: 'Is my child\'s weight and height normal?', k: 'weight height growth normal underweight overweight percentile chart thin', min: 0, max: 228, src: 'WHO',
+    a: ['Look at the trend over time on the WHO growth chart (More → Physical growth) rather than one number.', 'Most healthy children are between the WHO −2 and +2 lines (about the 2nd–98th percentile) and follow their own curve.', 'Ask "What is {his} weight percentile?" and I will check the latest reading.', 'Talk to your paediatrician if {he} crosses two percentile lines downward, or stops gaining weight.'] },
+  { t: 'Growth', q: 'How much weight should a baby gain?', k: 'weight gain per week per month double triple birth weight', min: 0, max: 24,
+    a: ['• 0–3 months: about 150–200 g a week', '• 3–6 months: about 100–150 g a week', '• 6–12 months: about 70–90 g a week', 'Birth weight usually doubles by 4–6 months and triples by 12 months. Length grows about 25 cm in the first year.'] },
+
+  // ---------------- MOVEMENT ----------------
+  { t: 'Movement', q: 'When do babies crawl?', k: 'crawl crawling not crawling scoot', min: 4, max: 15,
+    a: ['Most babies crawl between 7 and 10 months; some bottom-shuffle or commando-crawl, and some skip crawling and go straight to walking — that\'s fine if they are moving in some way.', 'Help: lots of floor time, toys just out of reach, tummy time from early on. Avoid long periods in walkers or carriers.'] },
+  { t: 'Movement', q: 'When do babies walk?', k: 'walk walking first steps not walking yet stand standing cruise', min: 7, max: 24, src: 'CDC',
+    a: ['First steps usually come between 9 and 15 months; walking well by about 18 months (CDC: walks without holding on by 18 months).', 'Help: let {him} pull up on sturdy furniture, cruise along a sofa, walk holding your hands. Barefoot indoors is best. Baby walkers are not recommended (injury risk, they don\'t help).', 'Talk to your doctor if {he} isn\'t walking by 18 months.'] },
+  { t: 'Movement', q: 'When do babies sit and roll over?', k: 'sit sitting roll rolling over head control tummy time', min: 0, max: 12,
+    a: ['• Holds head steady: about 4 months', '• Rolls over: 4–6 months', '• Sits with support: 4–6 months; without support: 6–8 months', 'Tummy time while awake every day builds the strength for these.'] },
+  { t: 'Movement', q: 'How can I help fine motor skills?', k: 'fine motor pincer grasp hand skills pick up small hold crayon', min: 6, max: 72,
+    a: ['• 8–12 months: let {him} pick up small soft food pieces (pincer grasp), put blocks in a cup.', '• 1–2 years: stacking blocks, scribbling with fat crayons, spoon feeding.', '• 2–4 years: playdough, threading big beads, opening jars, drawing circles.', '• 4–6 years: scissors (child-safe), buttons, writing letters.'] },
+  { t: 'Movement', q: 'How much physical activity does my child need?', k: 'exercise physical activity active play outdoor sports how much', min: 0, max: 240, src: 'WHO',
+    a: ['WHO:', '• Babies: several times a day of active floor play, including 30+ minutes of tummy time.', '• 1–4 years: at least 3 hours of varied activity spread over the day.', '• 5–17 years: at least 60 minutes a day of moderate-to-vigorous activity.', 'Ask "How active was {he} this week?" to check the logs.'] },
+
+  // ---------------- LANGUAGE ----------------
+  { t: 'Language', q: 'When will my baby say the first word?', k: 'first word talk speak amma appa words babble', min: 4, max: 24, src: 'CDC',
+    a: ['• 6–9 months: babbling "mamama", "bababa"', '• Around 12 months: first words like "amma", "appa" or a special word', '• 18 months: at least 3 words besides mama/dada', '• 2 years: 2-word phrases ("more milk"), pointing to body parts', 'Speaking two languages at home does NOT cause speech delay.'] },
+  { t: 'Language', q: 'My child is not talking yet / speech delay', k: 'speech delay late talker not talking few words', min: 12, max: 72,
+    a: ['Talk to your paediatrician if by:', '• 12 months: no babbling, pointing or waving', '• 18 months: no words, or doesn\'t understand simple instructions', '• 2 years: fewer than ~50 words or no 2-word phrases', '• Any age: loses words or skills {he} had', 'A hearing test and speech therapy assessment are common first steps. Meanwhile: talk, read and sing all day, and reduce screen time.'] },
+  { t: 'Language', q: 'How can I help my child\'s language development?', k: 'language development vocabulary reading talk to baby serve and return books', min: 0, max: 96, src: 'Harvard CDC',
+    a: ['• Serve & return: when {he} babbles or points, respond, name it, and wait for {his} turn.', '• Narrate your day: "Now we are washing hands."', '• Read every day — let {him} point and turn pages.', '• Expand words: {he} says "ball" → you say "Yes, big red ball!"', '• Sing rhymes in your home language.', '• Limit screens: real conversation builds language, videos do not.'] },
+  { t: 'Language', q: 'Is it okay to teach two languages (Tamil and English)?', k: 'bilingual two languages tamil english mother tongue hindi', min: 0, max: 120,
+    a: ['Yes — children can easily learn two or more languages. Bilingual children may mix words at first; that\'s normal.', 'Speak the language you are most comfortable with; consistency helps (e.g., Tamil at home, English at school).', 'Mother-tongue songs and stories build both language and identity.'] },
+
+  // ---------------- EMOTIONS / EI ----------------
+  { t: 'Feelings', q: 'How do I teach emotional intelligence?', k: 'emotional intelligence feelings emotions teach eq empathy', min: 0, max: 240, src: 'Gottman',
+    a: ['Emotion coaching in 5 steps:', '1. Notice the feeling (even small ones)', '2. See it as a chance to connect and teach', '3. Listen and validate: "You\'re sad the park is over."', '4. Help {him} name the feeling', '5. Set limits and problem-solve: "You can be angry, but no hitting. Let\'s squeeze the pillow."', 'This week\'s age-matched practice is in the Heart tab, with the full roadmap to 15 years.'] },
+  { t: 'Feelings', q: 'How to raise a kind child', k: 'kind kindness caring good values empathy sharing manners', min: 12, max: 240,
+    a: ['• Model kindness: let {him} see you help others and say thank you.', '• Give real chances to help: watering plants, carrying things, comforting a younger child.', '• Praise character: "You are a helpful person."', '• Talk about others\' feelings in stories: "How does he feel?"', '• Gratitude ritual at dinner or bedtime.', '• Log kind moments with 💗 — what you notice grows.'] },
+  { t: 'Feelings', q: 'Separation anxiety — my baby cries when I leave', k: 'separation anxiety clingy cries when i leave stranger anxiety daycare', min: 6, max: 48,
+    a: ['Separation anxiety is normal, peaking around 8–18 months.', '• Short, warm goodbye ritual — never sneak out.', '• Come back when you said you would; start with short separations.', '• Leave a familiar comfort object.', '• Play peek-a-boo and hide-and-seek: they teach that people come back.'] },
+  { t: 'Feelings', q: 'My child is shy', k: 'shy quiet introvert doesnt talk to others new people', min: 12, max: 180,
+    a: ['Shyness is a temperament, not a problem.', '• Give time to warm up; stay close in new places.', '• Don\'t label {him} as "shy" in front of others.', '• Practise greetings through play.', '• Small, familiar playdates help more than big groups.'] },
+  { t: 'Feelings', q: 'How to build my child\'s confidence and self-esteem', k: 'confidence self esteem praise growth mindset believe', min: 18, max: 240,
+    a: ['• Praise effort and strategy ("You kept trying!") more than results or "smart".', '• Let {him} do things for {himself}, even if slower.', '• Give small responsibilities and thank {him}.', '• Allow safe failures and talk about what to try next ("the power of yet").', '• Spend 10–15 minutes of special one-on-one time daily.'] },
+
+  // ---------------- BEHAVIOUR ----------------
+  { t: 'Behaviour', q: 'How to handle tantrums', k: 'tantrum tantrums meltdown screaming angry crying fits throwing', min: 12, max: 96,
+    a: ['Tantrums are normal from 1–4 years — the thinking brain is still developing.', 'In the moment:', '1. Keep everyone safe', '2. Stay calm and close; use few words', '3. Validate the feeling, hold the limit: "You wanted the biscuit. It\'s dinner now."', '4. Wait it out; offer a hug when ready', '5. Talk and teach later, when calm', 'Prevent: regular meals and naps, warnings before transitions, choices. The Heart tab shows {his} most common triggers.'] },
+  { t: 'Behaviour', q: 'My child bites or hits', k: 'bite biting hitting hits pushing scratching aggressive kicks', min: 9, max: 72,
+    a: ['• Stay calm; firmly say "No biting. Biting hurts." and move {him} away.', '• Comfort the hurt person first (shows empathy).', '• Name the feeling and show what to do instead: "You\'re angry. Stamp your feet / say STOP."', '• Look for triggers: tired, hungry, teething, crowded play.', '• Never bite or hit back — it teaches the opposite.'] },
+  { t: 'Behaviour', q: 'My child doesn\'t listen', k: 'doesnt listen not listening disobey stubborn defiant ignoring no', min: 18, max: 180,
+    a: ['• Get down to {his} level, make eye contact, use {his} name, then give one short instruction.', '• Say what TO do: "Walk please" instead of "Don\'t run".', '• Offer two choices: "Shoes first or socks first?"', '• Give warnings before transitions: "5 more minutes".', '• Follow through calmly with logical consequences.', '• Notice and praise listening much more than you correct.'] },
+  { t: 'Behaviour', q: 'Is time-out or punishment okay?', k: 'punishment spank beating time out discipline scold shout', min: 12, max: 240, src: 'AAP',
+    a: ['Hitting, slapping and shouting work short-term but increase aggression and damage trust (AAP).', 'Better tools:', '• Time-in (stay with {him} to calm down) for young children', '• Logical consequences (crayons on wall → we clean it together)', '• Clear rules + consistency across all caregivers', '• Repair after mistakes — including yours: "I shouted. I\'m sorry."'] },
+  { t: 'Behaviour', q: 'My child is lying', k: 'lying lies lie truth honesty', min: 36, max: 180,
+    a: ['Early "lies" are often imagination or fear of trouble.', '• Make it safe to tell the truth: "Thank you for telling me — let\'s fix it together."', '• Avoid traps ("Did you break this?" when you know). State what happened instead.', '• Praise honesty more than you punish the mistake.', '• Model honesty yourself.'] },
+  { t: 'Behaviour', q: 'Sibling fights and jealousy of a new baby', k: 'sibling fight jealous new baby brother sister rivalry', min: 18, max: 180,
+    a: ['• Give each child special one-on-one time.', '• Involve the older child in helping with the baby.', '• Don\'t compare children.', '• Coach problem-solving instead of judging: "What can you both do?"', '• Step in when someone could be hurt.'] },
+  { t: 'Behaviour', q: 'How much screen time is okay?', k: 'screen time tv mobile phone youtube cartoon video games', min: 0, max: 240, src: 'WHO / AAP',
+    a: ['• Under 2 years: avoid screens (video calls with family are fine).', '• 2–5 years: no more than 1 hour a day, good-quality content, watched together.', '• 6+ years: a family media plan that protects sleep, exercise, homework and family time.', '• No screens at meals or 1 hour before bed; devices out of the bedroom.', 'Ask "How much screen time this week?" and I\'ll check the logs.'] },
+
+  // ---------------- TOILET ----------------
+  { t: 'Toilet', q: 'When to start potty training?', k: 'potty training toilet training diaper free start age ready', min: 12, max: 60,
+    a: ['Most children are ready between 18 months and 3 years.', 'Readiness signs: dry for 2 hours, tells you when wet/dirty, interested in the toilet, can pull pants down.', '• Use the pee/poop log to find {his} natural times and offer the potty then.', '• Praise tries; stay calm about accidents; never punish.', '• Night dryness comes later, often 4–6 years.'] },
+  { t: 'Toilet', q: 'How many wet nappies / pee is normal?', k: 'wet diapers pee urine how many times normal nappies', min: 0, max: 36,
+    a: ['Babies: about 6 or more wet nappies a day after the first week. Toddlers pee 4–8 times a day.', 'Fewer than 4 wet nappies, dark urine or no urine for 6–8 hours can mean dehydration — see a doctor.', 'Ask "How many times did {he} pee today?"'] },
+  { t: 'Toilet', q: 'Bedwetting', k: 'bedwetting wets bed night accident', min: 36, max: 144,
+    a: ['Bedwetting is common up to 6–7 years and usually stops on its own.', '• No blame or punishment.', '• Toilet before bed; limit drinks in the last hour.', '• Waterproof sheet; praise dry nights but don\'t reward-chart pressure.', 'See a doctor if it starts again after being dry for months, or with pain, thirst or daytime accidents.'] },
+
+  // ---------------- PLAY & LEARNING ----------------
+  { t: 'Play & learning', q: 'What activities can I do with my baby at this age?', k: 'activities play ideas games what to do with baby bored toys toy', min: 0, max: 24,
+    a: ['By age:', '• 0–3 months: face-to-face talking, tummy time, black-and-white pictures', '• 3–6 months: rattles, mirror play, singing, reaching for toys', '• 6–9 months: peek-a-boo, banging toys, water play, finger foods', '• 9–12 months: hide-the-toy, stacking cups, pushing balls, books with flaps', '• 12–24 months: blocks, pretend feeding a doll, scribbling, outdoor walks naming things', 'The Heart tab has this week\'s feelings activity too.'] },
+  { t: 'Play & learning', q: 'Activities for toddlers and preschoolers', k: 'toddler activities preschool games learning at home craft', min: 18, max: 72,
+    a: ['• Pretend play: kitchen, doctor, shop', '• Building: blocks, Lego, sand', '• Art: crayons, painting, playdough, rangoli colours', '• Movement: dancing, ball games, playground', '• Learning in daily life: counting idlis, colours of vegetables, shapes on the road', '• Helping: watering plants, sorting clothes'] },
+  { t: 'Play & learning', q: 'When should my child learn alphabets and numbers?', k: 'alphabet abc numbers counting reading writing teach early academics', min: 18, max: 84,
+    a: ['Before 5 years, play IS learning — don\'t push worksheets.', '• 2–3 years: songs, counting objects, colours and shapes in play', '• 3–4 years: letter sounds (phonics) through games, recognising own name', '• 4–6 years: counting to 20, writing own name, simple reading', 'Reading aloud daily is the single best preparation for school.'] },
+  { t: 'Play & learning', q: 'How to make my child love reading', k: 'reading books read aloud story love reading library', min: 0, max: 180,
+    a: ['• Read aloud every day from birth — even 10 minutes.', '• Let {him} choose books; re-reading favourites is good.', '• Ask questions: "What will happen next? How does she feel?"', '• Keep books where {he} can reach them.', '• Let {him} see you reading.'] },
+  { t: 'Play & learning', q: 'When should my child start preschool or school?', k: 'preschool school admission age playschool daycare start', min: 18, max: 84,
+    a: ['Preschool/playschool is often started around 2½–3½ years; formal school (Class 1) around 6 years (NEP 2020).', 'Signs of readiness: can separate from you for a few hours, basic toilet skills, follows simple instructions, plays near other children.'] },
+
+  // ---------------- SAFETY ----------------
+  { t: 'Safety', q: 'Babyproofing the house', k: 'safety babyproof childproof home falls electric socket stairs', min: 4, max: 60,
+    a: ['• Cover electric sockets; tie up curtain and window cords.', '• Gates on stairs; window guards.', '• Medicines, cleaners, button batteries and magnets locked away and high.', '• Anchor heavy furniture and TV to the wall.', '• Never leave {him} alone near water (buckets too) or on a bed/sofa.', '• Hot drinks and stoves out of reach.'] },
+  { t: 'Safety', q: 'My child swallowed something / poisoning', k: 'swallowed battery coin magnet poison medicine kerosene choking', min: 3, max: 120,
+    a: ['🚨 Button battery, magnets, medicines, kerosene or cleaning liquids: go to the hospital immediately (call 108). Don\'t make {him} vomit.', '🚨 Choking and can\'t breathe/cry: give back blows and chest thrusts (infant first aid) and call for help.', 'Take the packet/bottle with you to the hospital.'] },
+  { t: 'Safety', q: 'Car and two-wheeler safety', k: 'car seat bike scooter two wheeler helmet travel', min: 0, max: 144,
+    a: ['• Use a rear-facing infant car seat in the back seat, then forward-facing seats and boosters as {he} grows.', '• Never hold a baby on your lap in a moving car.', '• On two-wheelers, children need a helmet and should ride only when old enough to hold on safely.'] },
+
+  // ---------------- VACCINES ----------------
+  { t: 'Vaccines', q: 'Which vaccines are due?', k: 'vaccine vaccination injection due schedule next vaccine immunisation', min: 0, max: 240,
+    a: ['The Vaccines page (More → Vaccines) shows India\'s government schedule with due dates from {his} birthday.', 'Ask "When is the next vaccine?" and I\'ll tell you what\'s due next.'] },
+  { t: 'Vaccines', q: 'Fever or pain after a vaccine', k: 'after vaccine fever swelling pain injection side effects', min: 0, max: 240,
+    a: ['Mild fever, fussiness and a sore lump at the injection site for 1–2 days are common.', '• Extra feeds and cuddles; a cool cloth on the spot.', '• Paracetamol only as your doctor advises.', 'See a doctor for fever above 104°F, crying for 3+ hours, fits, or swelling that keeps growing.'] },
+
+  // ---------------- SCHOOL AGE ----------------
+  { t: 'School', q: 'How to build good study habits', k: 'study habits homework concentration focus marks exams', min: 60, max: 240,
+    a: ['• Fixed study time and a quiet, screen-free place.', '• Hardest subject first, when fresh.', '• Short focused sessions (20–40 min) with breaks.', '• Self-testing and spaced revision beat re-reading.', '• Review mistakes calmly: "What will you do differently?"', '• Protect sleep, play and exercise — they improve memory.'] },
+  { t: 'School', q: 'My child doesn\'t want to go to school', k: 'school refusal doesnt want to go school crying bullying teacher', min: 36, max: 180,
+    a: ['• Listen calmly — ask what is hard (friends, teacher, work, bullying).', '• Talk with the teacher together.', '• Keep a steady morning routine and a short, confident goodbye.', '• Watch for bullying signs: unexplained injuries, lost things, sudden fear or tummy aches on school days.'] },
+  { t: 'School', q: 'How to handle exam stress', k: 'exam stress anxiety pressure board exams marks fear', min: 96, max: 240,
+    a: ['• Help make a realistic revision plan with breaks.', '• Sleep, food and exercise matter more during exams, not less.', '• Praise effort, not only marks; avoid comparisons.', '• Teach calming tools: slow breathing, a short walk.', '• Seek help early if {he} seems persistently low, can\'t sleep, or stops eating.'] },
+  { t: 'School', q: 'Pocket money and responsibility', k: 'pocket money chores responsibility money saving', min: 60, max: 240,
+    a: ['• Age-appropriate chores build responsibility (setting the table at 4, making own bed at 6, simple cooking at 10+).', '• Small regular pocket money teaches saving and choices — let {him} make small mistakes.', '• Talk about needs vs wants.'] },
+
+  // ---------------- TEENS ----------------
+  { t: 'Teens', q: 'Puberty — what to expect', k: 'puberty body changes periods voice change hormones teenage', min: 96, max: 240,
+    a: ['Puberty usually begins around 8–13 years in girls and 9–14 years in boys.', '• Talk early and openly about body changes, hygiene and feelings.', '• Mood swings and need for privacy are normal.', '• Sleep needs stay high (8–10 h), and the body clock shifts later.'] },
+  { t: 'Teens', q: 'How to stay connected with my teenager', k: 'teenager communication talk connect relationship moody', min: 120, max: 240,
+    a: ['• Listen more than you advise; ask "Do you want help or just to vent?"', '• Regular one-on-one time (walks, drives, cooking).', '• Respect privacy while keeping safety rules clear.', '• Share your own mistakes and what you learnt.', '• Watch for warning signs: persistent sadness, withdrawal, changes in sleep/eating, self-harm talk — seek professional help early.'] },
+  { t: 'Teens', q: 'Online safety and phones', k: 'online safety social media phone internet cyberbullying gaming', min: 72, max: 240,
+    a: ['• Agree a family media plan together: time limits, no phones at meals or in the bedroom at night.', '• Teach: never share passwords, address or photos with strangers.', '• Talk about cyberbullying and kindness online.', '• Keep devices in shared spaces for younger children.'] },
+
+  // ---------------- PARENT ----------------
+  { t: 'Parents', q: 'I feel tired, stressed or low as a parent', k: 'parent stress tired exhausted depressed burnout postpartum mother mental health', min: 0, max: 240,
+    a: ['You matter too — children regulate through your calm.', '• Share the load: let family help; take short breaks.', '• Sleep when you can, eat regularly, step outside daily.', '• It\'s okay to make mistakes; repair is what matters.', '• If you feel low most days for 2+ weeks, anxious, or have thoughts of harming yourself, please talk to a doctor. In India you can call Tele-MANAS: 14416 (free, 24×7).'] },
+  { t: 'Parents', q: 'How to use this app', k: 'how to use app help features log timer backup', min: 0, max: 240,
+    a: ['• Home: pick a category chip and tap big buttons (tap to start, tap again to stop).', '• 🎤 "Tell me what happened" turns a spoken sentence into log entries.', '• Health: illnesses, prescriptions, medicines with next-dose times.', '• Heart: feelings practice of the week + roadmap.', '• More: milestones, physical growth vs WHO, vaccines, guide.', '• ☁️: backup to Google Drive.'] },
+];
+
+// Words that mean the same thing (left side is what people type, right side is the canonical word)
+export const SYNONYMS = {
+  slept: 'sleep', sleeping: 'sleep', naps: 'nap', napping: 'nap', napped: 'nap', thookam: 'sleep', thoonga: 'sleep', bedtime: 'sleep',
+  eat: 'food', eats: 'food', eating: 'food', ate: 'food', meal: 'food', meals: 'food', saapadu: 'food', solids: 'food', feeding: 'feed', feeds: 'feed', fed: 'feed', nursing: 'breastfeed', breastfeeding: 'breastfeed', paal: 'milk',
+  poo: 'poop', potty: 'potty', stool: 'poop', motion: 'poop', motions: 'poop', urine: 'pee', wee: 'pee', diapers: 'nappy', diaper: 'nappy', nappies: 'nappy',
+  kaichal: 'fever', temperature: 'fever', temp: 'fever', crying: 'cry', cries: 'cry', cried: 'cry', azhugai: 'cry', fussy: 'cry', cranky: 'cry',
+  teeth: 'tooth', teething: 'tooth', pal: 'tooth', talking: 'talk', speaking: 'talk', speak: 'talk', speech: 'talk', words: 'word',
+  walking: 'walk', walks: 'walk', steps: 'walk', crawling: 'crawl', standing: 'stand', biting: 'bite', bites: 'bite', hitting: 'hit', hits: 'hit',
+  tantrums: 'tantrum', meltdown: 'tantrum', angry: 'tantrum', vaccines: 'vaccine', vaccination: 'vaccine', injection: 'vaccine', thadupoosi: 'vaccine',
+  weight: 'weight', weighs: 'weight', height: 'height', tall: 'height', mobile: 'screen', tv: 'screen', phone: 'screen', youtube: 'screen', cartoon: 'screen',
+  vomiting: 'vomit', vomits: 'vomit', loose: 'diarrhoea', diarrhea: 'diarrhoea', coughing: 'cough', medicines: 'medicine', syrup: 'medicine', tablet: 'medicine',
+};
