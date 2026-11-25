@@ -537,3 +537,13 @@ body.locked .toast { top: calc(10px + env(safe-area-inset-top)); bottom: auto; }
 .alarm-card .alarm-big { font-size: 2.6rem; line-height: 1; margin-bottom: 4px; }
 .alarm-card .btn.wide { width: 100%; font-size: 1.05rem; padding: 14px; }
 .alarm-card .warn { color: var(--high); }
+
+/* ---------- tap a number to filter, learning & feelings shortcuts ---------- */
+.glance .g.on { outline: 2.5px solid var(--accent); background: var(--accent-soft); }
+.filter-bar { display: flex; justify-content: space-between; align-items: center; gap: 8px; background: var(--accent-soft); border-radius: 14px; padding: 8px 8px 8px 12px; margin: 6px 0; font-size: .9rem; scroll-margin-top: 90px; }
+.filter-bar .pill-btn { background: var(--surface); color: var(--text); white-space: nowrap; }
+.today-strip { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 8px 0; }
+.today-strip .ts { appearance: none; border: none; text-align: left; background: var(--tint); color: var(--text); border-radius: 16px; padding: 10px 12px; font: inherit; cursor: pointer; display: grid; grid-template-columns: auto 1fr; column-gap: 8px; align-items: center; min-width: 0; }
+.today-strip .ts span { grid-row: span 2; font-size: 1.5rem; }
+.today-strip .ts b { font-size: .9rem; }
+.today-strip .ts small { color: var(--text-2); font-size: .74rem; line-height: 1.25; overflow-wrap: anywhere; }
