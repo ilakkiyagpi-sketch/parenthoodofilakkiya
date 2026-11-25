@@ -1990,6 +1990,7 @@ async function notify(key, title, body, go = '') {
 }
 function handleGo(go) {
   if (go.startsWith('stop:')) { const [, child, id] = go.split(':'); return stopFromNotification(child, id); }
+  if (go.startsWith('quick:')) return quickAction(go.slice(6));
   if (go === 'learn') openLearning();
   else if (go === 'doctor' || go === 'week') { S.view = go; route(); }
   else if (go === 'health') { S.view = 'health'; route(); }
@@ -2500,6 +2501,16 @@ async function syncRunNotes() {
       actions: [{ action: 'stop', title: '⏹ Stop' }],
     }).catch(() => {});
   }
+}
+// Home-screen widget buttons (Android app): ?go=quick:nap|feed|meal|pee|voice
+async function quickAction(what) {
+  S.view = 'home'; await route();
+  const fake = { dataset: { type: what }, closest: () => null };
+  if (what === 'nap') return toggleTimer('nap');
+  if (what === 'feed') return S.months < 24 ? toggleTimer('breastfeed') : toggleTimer('meal');
+  if (what === 'meal') return toggleTimer('meal');
+  if (what === 'pee') return handleClick(fake, 'quick', { stopPropagation() {} });
+  if (what === 'voice') return handleClick(fake, 'voice', { stopPropagation() {} });
 }
 async function stopFromNotification(childId, id) {
   if (childId && childId !== S.child && S.children.some(c => c.id === childId)) await selectChild(childId);

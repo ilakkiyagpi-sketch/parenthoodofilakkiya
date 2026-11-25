@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Happy Parenthood</string>
+    <string name="launch_url">https://ilakkiyagpi-sketch.github.io/parenthoodofilakkiya/</string>
+    <string name="widget_name">Happy Parenthood quick buttons</string>
+    <string name="widget_desc">One tap to start a nap, a feed or a meal, log pee, or tell what happened</string>
+    <string name="asset_statements" translatable="false">
+        [{ \"relation\": [\"delegate_permission/common.handle_all_urls\"],
+           \"target\": { \"namespace\": \"web\", \"site\": \"https://ilakkiyagpi-sketch.github.io\" } }]
+    </string>
+</resources>

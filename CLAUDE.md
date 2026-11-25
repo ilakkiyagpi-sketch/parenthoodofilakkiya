@@ -24,6 +24,7 @@ A personal, offline-first parenting PWA built for one family (Amma/Appa) in Tami
 | `js/learning.js` | Wake windows by age, learning-time ideas (reading types, books, materials, Tamil/English rhymes) by age band |
 | `bell/worker.js`, `bell/README.md` | Owner-run Cloudflare Worker ("bell"): D1 database bound as `DB` (tables auto-created), cron every minute sends an empty Web Push (VAPID keys auto-made) to phones with a reminder due; `sw.js` then fetches `/due` and shows it. Address goes in `BELL_URL` in `js/config.js` |
 | `js/i18n.js` | Tamil interface (per phone, `hp-lang`): dictionary of UI strings applied to text nodes as screens render (MutationObserver). Long content stays English. Add new UI strings here |
+| `android/`, `.github/workflows/android.yml` | Android app (Trusted Web Activity via android-browser-helper) + home-screen quick-buttons widget (`QuickWidget.java` → `?go=quick:nap|feed|meal|pee|voice`, handled by `quickAction()` in app.js). Built by GitHub Actions; signed with secrets `ANDROID_KEYSTORE_B64` / `ANDROID_KEYSTORE_PASSWORD`; latest APK published as release `android-latest`. Digital Asset Links file lives in the `ilakkiyagpi-sketch.github.io` repo. See `android/README.md` |
 | `js/photos.js` | Photo compression (≤1280 px JPEG) stored in IndexedDB |
 | `js/pronouns.js` | he/she wording per child (rewrites content objects in place) |
 | `js/db.js` | IndexedDB: one database per child (`parenthood`, `parenthood-<childId>`); change queues for Sheet (`dirty`) and Drive (`driveDirty`) |
@@ -44,6 +45,7 @@ A personal, offline-first parenting PWA built for one family (Amma/Appa) in Tami
 - Reminders: **one button for users** ("🔔 Turn on alarms", on/off stored per phone). The owner runs the Cloudflare bell backend; no setup steps shown in the app. In-app timers alone can't ring a closed PWA.
 - Running timers show in the phone's notification bar with a ⏹ Stop action (`syncRunNotes()` after each render; Stop opens `?go=stop:<child>:<id>`).
 - Foods tab: allergy foods (9), 3-day watch, favourites, Indian "try next" foods by age. Teeth chart (Grow → Teeth, 20 baby teeth, ADA ages). Amma's wellbeing (More; stored once in the main database kv `mom`; Tele-MANAS 14416 / 108 / 112). Month photo card (This month → Month card; canvas 1080×1350, share/save).
+- Android app: user chose **Option A** (wrap the web app + quick-buttons widget, family install by APK first; Play Store maybe later). A live-data widget would need the bell to hold a summary.
 - Settings split into sections. Several children are switched by tapping the name in the header.
 
 ## Ideas mentioned but not built yet

@@ -1,0 +1,8 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "io.github.ilakkiyagpisketch.happyparenthood",
+    "sha256_cert_fingerprints": ["A3:63:0B:44:01:47:87:DE:28:93:5F:23:26:A9:FE:11:03:31:F9:C9:C8:FE:CC:68:18:17:BE:B3:57:50:69:8E"]
+  }
+}]
