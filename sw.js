@@ -1,6 +1,6 @@
 // Offline support: cache the app shell, serve it when offline, refresh in background.
-const CACHE = 'happy-parenthood-v9';
-const SHELL = ['./', 'index.html', 'css/styles.css', 'js/app.js', 'js/db.js', 'js/util.js', 'js/catalog.js', 'js/stages.js', 'js/guide.js', 'js/charts.js', 'js/sync.js', 'js/photos.js', 'js/voice.js', 'js/devdata.js', 'js/growth.js', 'js/who-data.js', 'js/pronouns.js', 'js/drive.js', 'js/config.js', 'js/assistant.js', 'js/assistant-kb.js',
+const CACHE = 'happy-parenthood-v10';
+const SHELL = ['./', 'index.html', 'css/styles.css', 'js/app.js', 'js/db.js', 'js/util.js', 'js/catalog.js', 'js/stages.js', 'js/guide.js', 'js/charts.js', 'js/sync.js', 'js/photos.js', 'js/voice.js', 'js/devdata.js', 'js/growth.js', 'js/who-data.js', 'js/pronouns.js', 'js/drive.js', 'js/config.js', 'js/assistant.js', 'js/assistant-kb.js', 'js/learning.js',
   'manifest.webmanifest', 'icons/favicon-64.png', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
@@ -19,4 +19,15 @@ self.addEventListener('fetch', e => {
       return res;
     }).catch(() => caches.match(e.request).then(r => r || caches.match('index.html')))
   );
+});
+
+// Tapping a reminder opens the app (or brings it to the front) on the right screen.
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  const go = e.notification.data?.go || '';
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+    const c = list[0];
+    if (c) { c.postMessage({ go }); return c.focus(); }
+    return self.clients.openWindow(go ? `./?go=${go}` : './');
+  }));
 });

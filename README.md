@@ -82,6 +82,14 @@ On **Today**, tap **Nap**, **Night sleep**, **Eating**, **Bath**, **Play**, **Wa
 - After stopping **Eating**, the form opens so you can add what he ate and how much.
 - Every action shows **Undo** and **Add details** for a few seconds.
 
+## Learning time, reminders and reports
+- **Next nap:** after a sleep ends (or *Woke up*), Home shows how long he has been awake and when the next nap is usually due for his age; it turns orange at nap time and red when he is past it.
+- **Woke up → morning card:** a 5-minute learning idea, today's feelings (EI) activity with *We did it*, and when learning time is.
+- **Learning time** (default 9:00): a card on Home and an alarm with today's kind of reading, two books, a material, a rhyme and the feelings activity; *Start learning* starts the timer. Also in More → Learning time. Ideas come from `js/learning.js`, by age.
+- **Reminders & alarms** (Settings): learning time, nap time, feeds every 2–4 h, medicines during an illness, vaccines a week ahead, and your own daily reminders ("08:00 Vitamin D drops"). They ring while the app is open or recently used; a **📅 Add to Calendar** button makes a daily Google Calendar event that always rings.
+- **Doctor summary** (Health → 📋, or More): questions for the doctor, latest growth with WHO percentiles, 14-day averages, illnesses and medicines, vaccines, milestones not seen yet. *Save as PDF / print* or share as text.
+- **Weekly report** (More, and a Home banner on Sunday/Monday): this week vs last week, milestones, new foods, new things, sleep chart; share with family.
+
 ## Deleting entries
 - **Pick and delete:** on the Home Timeline / Today's log, or in the **Diary** (choose any day with the calendar), tap **☑️ Select to delete**, tap the entries to tick them (or **Select all** for the whole day), then **🗑️ Delete**. A confirmation lists what will go.
 - **Everything before a time:** Settings → Files & data → **🧹 Delete old entries**.

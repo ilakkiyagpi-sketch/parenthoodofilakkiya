@@ -21,6 +21,7 @@ A personal, offline-first parenting PWA built for one family (Amma/Appa) in Tami
 | `js/guide.js` | Parenting library articles + daily tips |
 | `js/assistant-kb.js`, `js/assistant.js` | Offline "Ask" assistant (no AI): ~100 Q&A, synonym/Tanglish matching, emergency detection, personal answers from logs via `askContext()` in app.js |
 | `js/voice.js` | Speech-to-text (Web Speech API) + English sentence → log-entry parser |
+| `js/learning.js` | Wake windows by age, learning-time ideas (reading types, books, materials, Tamil/English rhymes) by age band |
 | `js/photos.js` | Photo compression (≤1280 px JPEG) stored in IndexedDB |
 | `js/pronouns.js` | he/she wording per child (rewrites content objects in place) |
 | `js/db.js` | IndexedDB: one database per child (`parenthood`, `parenthood-<childId>`); change queues for Sheet (`dirty`) and Drive (`driveDirty`) |
@@ -40,5 +41,5 @@ A personal, offline-first parenting PWA built for one family (Amma/Appa) in Tami
 - Settings split into sections. Several children are switched by tapping the name in the header.
 
 ## Ideas mentioned but not built yet
-- Reminders/notifications (next feed, nap due, vaccine due), favourite meals, weekly report card, PDF summary for doctor visits, doctor-questions list, wake-window timer.
+- Favourite meals / food 'try next' list, shared live view for both parents.
 - Tamil sentences in voice logging (currently saved as notes); optional AI "Ask" fallback.

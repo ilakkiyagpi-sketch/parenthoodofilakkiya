@@ -8,6 +8,7 @@ import { INDICATORS, whoValue, zScore, percentile, zLabel } from './growth.js';
 import { applyPronouns, pr } from './pronouns.js';
 import { answer as askAnswer, suggestions as askSuggestions, TOPICS as ASK_TOPICS, questionsFor } from './assistant.js';
 import { GUIDE, DAILY_TIPS } from './guide.js';
+import { learningFor, wakeWindowFor } from './learning.js';
 import { esc, uid, dateKey, parseKey, addDays, fmtTime, toLocalInput, fromLocalInput, fmtDur, fmtDateLong, fmtDateShort,
   hmToMin, minToHm, ageMonths, ageText, dayOfYear, entryMinutes } from './util.js';
 import { barChart, pairChart, lineChart, growthChart, wireTooltips } from './charts.js';
@@ -101,6 +102,9 @@ async function boot() {
   wireTooltips(document.body);
   watchPhotos();
   setInterval(tickTimers, 1000);
+  setInterval(() => checkReminders().catch(() => {}), 30000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkReminders().catch(() => {}); });
+  navigator.serviceWorker?.addEventListener('message', e => { if (e.data?.go) handleGo(e.data.go); });
   if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
   window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; if (S.settings?.dob) renderHeader(); });
   window.addEventListener('appinstalled', () => { installEvt = null; toast(`🎉 Installed! Open ${APP_NAME} from your home screen.`); if (S.settings?.dob) renderHeader(); });
@@ -116,7 +120,10 @@ async function boot() {
     if (S.settings?.dob && $('#sheet').hidden) route(); // don't disturb an open form
   });
   if (!S.settings?.dob) return renderOnboarding();
-  route();
+  await route();
+  const go = new URLSearchParams(location.search).get('go');
+  if (go) { history.replaceState(null, '', location.pathname); handleGo(go); }
+  checkReminders().catch(() => {});
 }
 
 // Switch the whole app to another child (each child has a separate database)
@@ -221,7 +228,7 @@ function applyAgeTheme() {
   document.querySelector('meta[name=theme-color]')?.setAttribute('content', th.accent);
 }
 
-const NAV_OF = { home: 'home', diary: 'diary', health: 'health', heart: 'heart', more: 'more', grow: 'more', routine: 'more', guide: 'more', settings: 'more', ask: 'more' };
+const NAV_OF = { home: 'home', diary: 'diary', health: 'health', heart: 'heart', more: 'more', grow: 'more', routine: 'more', guide: 'more', settings: 'more', ask: 'more', doctor: 'health', week: 'more' };
 let lastPage = '';
 // Re-render the current screen. The scroll position is kept when staying on the same
 // screen (e.g. after tapping a button or a checkbox) and reset only when changing screens.
@@ -234,7 +241,7 @@ async function route() {
   document.querySelectorAll('nav.tabs button').forEach(b => b.setAttribute('aria-current', b.dataset.view === NAV_OF[S.view] ? 'page' : 'false'));
   document.body.dataset.view = S.view;
   renderHeader();
-  await ({ ask: renderAsk, home: renderHome, diary: renderDiary, health: renderHealth, heart: renderHeart, more: renderMore, grow: renderGrow, routine: renderRoutine, guide: renderGuide, settings: renderSettings })[S.view]();
+  await ({ ask: renderAsk, home: renderHome, diary: renderDiary, health: renderHealth, heart: renderHeart, more: renderMore, grow: renderGrow, routine: renderRoutine, guide: renderGuide, settings: renderSettings, doctor: renderDoctor, week: renderWeek })[S.view]();
   if (keep) {
     const ds = main().querySelectorAll('details');
     if (open && open.length === ds.length) ds.forEach((d, i) => { d.open = open[i]; });
@@ -339,7 +346,10 @@ async function renderHome() {
     ${banner}
     ${await installNudge()}
     <button class="voice-cta" data-act="voice"><span class="mic-dot">🎤</span><span><b>Tell me what happened</b><br><small>“Ate 4 spoons of ragi at 8 and napped for an hour”</small></span></button>
+    ${await weekBanner()}
     ${await lastFeedStrip()}
+    ${await wakeStrip()}
+    ${await learningCard()}
     <div class="cats" role="tablist" aria-label="Categories">
       ${cats.map(c => { const n = running.filter(e => (CAT[e.type] || 'feel') === c.k).length; return `<button class="cat c-${c.k}" role="tab" data-act="homeCat" data-cat="${c.k}" aria-selected="${c.k === S.homeCat}">${c.icon} ${c.label}${n ? ' <i class="dot" aria-label="timer running"></i>' : ''}</button>`; }).join('')}
       <button class="cat all" data-act="openPicker">＋ All</button>
@@ -880,7 +890,7 @@ async function renderHealth() {
   if (S.healthTab === 'meds') list = entryList(h.meds.filter(match), 'No medicines logged.');
   if (S.healthTab === 'visits') list = entryList([...h.visits, ...h.temps].filter(match).sort((a, b) => b.start - a.start), 'No visits or temperature checks logged.');
   main().innerHTML = `
-    <h2>🩺 Health</h2>
+    <div class="row between"><h2>🩺 Health</h2><button class="btn small" data-act="view" data-view="doctor">📋 Doctor summary</button></div>
     <div class="health-actions">
       <button class="hb c-health" data-act="form" data-type="illness"><span>🤒</span>Illness</button>
       <button class="hb c-health" data-act="form" data-type="sick"><span>🌡️</span>Temperature</button>
@@ -1097,6 +1107,7 @@ function renderMore() {
     ['grow:memories', '✨', 'New things', 'Firsts & memories'], ['grow:trends', '📈', 'Trends', 'Sleep, food, play charts'],
     ['grow:physical', '📏', 'Physical growth', 'Monthly checks & WHO charts'], ['grow:foods', '🥕', 'Foods tried', 'Food diary & reactions'],
     ['grow:vaccines', '💉', 'Vaccines', 'Government schedule'], ['guide', '📖', 'Guide', 'Parenting library'],
+    ['week', '📊', 'Weekly report', 'This week vs last week'], ['doctor', '🩺', 'Doctor summary', 'For the next visit, as PDF'],
     ['settings', '⚙️', 'Settings', 'Profile, backup, buttons'],
   ];
   main().innerHTML = `<h2>More</h2>
@@ -1104,6 +1115,7 @@ function renderMore() {
       const [view, tab] = v.split(':');
       return `<button class="more-card" data-act="${tab ? 'goGrow' : 'view'}" data-view="${view}" ${tab ? `data-tab="${tab}"` : ''}><span>${i}</span><b>${t}</b><small>${s}</small></button>`;
     }).join('')}
+    <button class="more-card" data-act="learn"><span>📚</span><b>Learning time</b><small>Today's books & ideas</small></button>
     ${!isStandalone() ? `<button class="more-card" data-act="install"><span>📲</span><b>Install app</b><small>Add to home screen</small></button>` : ''}
     </section>`;
 }
@@ -1410,6 +1422,7 @@ const SETTINGS_SECTIONS = [
   ['profile', '👶', 'Child profile', 'Name, birthday, boy/girl, wake-up time'],
   ['children', '👨‍👩‍👧‍👦', 'Children', 'Add or switch between children'],
   ['family', '👪', 'Family & voice', 'Caregivers, who is logging, voice language'],
+  ['reminders', '⏰', 'Reminders & alarms', 'Learning time, nap, feeds, medicines'],
   ['display', '🎨', 'Look & theme', 'Light / dark mode, age theme'],
   ['backup', '☁️', 'Online backup', 'Google Sheet & Drive'],
   ['data', '💾', 'Files & data', 'Backup file, CSV, sample data, erase'],
@@ -1453,6 +1466,7 @@ async function renderSettings() {
       <p class="muted small">The colours change automatically every month until the first birthday, then with each age stage.</p>
       <button class="btn primary">Save</button></form>`;
   if (tab === 'backup') body = await backupSection();
+  if (tab === 'reminders') body = remindersSection();
   if (tab === 'data') body = `<section class="card"><div class="label">Data on this phone for ${esc(s.name)}: ${(await db.all()).length} entries</div>
       <div class="row wrap"><button class="btn" data-act="export">⬇️ Backup file</button><button class="btn" data-act="csv">⬇️ Export CSV</button>
       <label class="btn">⬆️ Restore file<input type="file" id="importFile" accept="application/json" hidden></label></div>
@@ -1470,6 +1484,12 @@ async function renderSettings() {
   onSave('#familyForm', fd => {
     const caregivers = String(fd.get('caregivers')).split(',').map(x => x.trim()).filter(Boolean);
     S.settings = { ...S.settings, caregivers: caregivers.length ? caregivers : ['Parent'], me: caregivers.includes(fd.get('me')) ? fd.get('me') : caregivers[0], voiceLang: fd.get('voiceLang') || 'en-IN' };
+  });
+  onSave('#remForm', async fd => {
+    const on = fd.get('on') === 'on';
+    if (on && 'Notification' in window && Notification.permission === 'default') { try { await Notification.requestPermission(); } catch (e) { /* ignore */ } }
+    S.settings = { ...S.settings, rem: { on, learn: fd.get('learn') === 'on', learnAt: fd.get('learnAt') || '09:00', nap: fd.get('nap') === 'on',
+      feedHrs: Number(fd.get('feedHrs')) || 0, meds: fd.get('meds') === 'on', vax: fd.get('vax') === 'on', custom: fd.get('custom') || '' } };
   });
   onSave('#displayForm', fd => { S.settings = { ...S.settings, theme: fd.get('theme') || 'auto' }; });
   $('#syncForm')?.addEventListener('submit', onSyncSubmit);
@@ -1776,6 +1796,7 @@ async function toggleTimer(type, opts = {}) {
     const mins = entryMinutes(running);
     route();
     if (type === 'meal') { toast(`🥣 Eating time: ${fmtDur(mins)} — add what ${S.P.he} ate`); return openForm('meal', running, { focusFoods: true, noFocus: true }); }
+    if (type === 'sleep') { toast(`🌙 Night sleep: ${fmtDur(mins)}`, [['Undo', async () => { running.end = null; await db.put(running); closeSheet(); route(); }]]); return openMorning(running); }
     return toast(`${t.icon} ${t.label}: ${fmtDur(mins)} (${fmtTime(running.start)}–${fmtTime(running.end)})`, [
       ['Undo', async () => { running.end = null; await db.put(running); route(); }],
       ['Add details', () => openForm(type, running)]]);
@@ -1825,6 +1846,316 @@ async function lastFeedStrip() {
     : `<span class="lf">${f.type === 'bottle' ? '🍼' : '🤱'} Last feed <b data-ago="${f.start}">${esc(agoText(f.start))}</b> <small>${fmtTime(f.start)}${f.data?.side ? ' · ' + esc(f.data.side) : ''}${f.data?.amount ? ' · ' + esc(f.data.amount) + ' ml' : ''}</small></span>`;
   const mealTxt = m ? `<span class="lf">🥣 Last meal <b data-ago="${m.start}">${esc(agoText(m.start))}</b></span>` : '';
   return `<section class="last-feed" aria-live="polite">${feedTxt}${mealTxt}</section>`;
+}
+
+// ------------------------------------------------------------------ WAKE WINDOW ("next nap")
+async function lastWakeAt() {
+  const sleeps = [...await db.byType('sleep'), ...await db.byType('nap')];
+  if (sleeps.some(e => !e.end)) return { asleep: true };
+  const ends = sleeps.map(e => e.end).filter(Boolean);
+  const wakes = (await db.byType('wake')).map(e => e.start);
+  const t = Math.max(0, ...ends, ...wakes);
+  return t && Date.now() - t < 16 * 3600000 ? { at: t } : {};
+}
+async function wakeInfo() {
+  const win = wakeWindowFor(S.months);
+  if (!win) return null;
+  const w = await lastWakeAt();
+  if (!w.at) return null;
+  const awake = (Date.now() - w.at) / 60000;
+  if (awake > win[1] + 180) return null; // a sleep was probably not logged
+  const evening = new Date().getHours() >= 17;
+  return { at: w.at, awake, lo: win[0], hi: win[1], what: evening ? 'sleep' : 'nap',
+    state: awake < win[0] ? 'early' : awake <= win[1] ? 'due' : 'over' };
+}
+async function wakeStrip() {
+  const w = await wakeInfo();
+  if (!w) return '';
+  const from = fmtTime(w.at + w.lo * 60000), to = fmtTime(w.at + w.hi * 60000);
+  const msg = w.state === 'early' ? `Next ${w.what} around <b>${from}–${to}</b>`
+    : w.state === 'due' ? `<b>${w.what === 'nap' ? 'Nap' : 'Sleep'} time now</b> · watch for yawns and eye-rubbing`
+    : `<b>Past ${S.P.his} usual awake time</b> · try to settle ${S.P.him} soon`;
+  return `<section class="wake-strip ${w.state}" aria-live="polite"><span>🌤️ Awake <b data-since="${w.at}">${fmtDur(w.awake)}</b></span><span>${msg}</span></section>`;
+}
+
+// ------------------------------------------------------------------ LEARNING TIME + MORNING
+const remCfg = () => ({ on: false, learnAt: '09:00', learn: true, nap: true, feedHrs: 0, meds: true, vax: true, custom: '', ...(S.settings.rem || {}) });
+const fillName = s => s.replace(/\{name\}/g, S.settings.name || 'baby');
+function learningPicks(salt = 0) {
+  const L = learningFor(S.months), d = dayOfYear() + salt * 3;
+  const at = (arr, k = 0) => arr[(d + k) % arr.length];
+  return { type: at(L.types), books: [at(L.books), L.books.length > 1 ? at(L.books, Math.ceil(L.books.length / 2)) : null].filter(Boolean),
+    material: at(L.materials), rhyme: at(L.rhymes), morning: fillName(at(L.morning)) };
+}
+const todaysEi = () => pickDaily(S.stage.ei.activities, 0);
+async function learnedToday(after = 0) {
+  return (await db.byDate(dateKey())).some(e => ['study', 'reading', 'homework'].includes(e.type) && e.start >= after);
+}
+async function learningCard() {
+  const r = remCfg();
+  if (!r.learn) return '';
+  const now = new Date(), at = hmToMin(r.learnAt), min = now.getHours() * 60 + now.getMinutes();
+  if (min < at - 15 || min > at + 120) return '';
+  const start = new Date(); start.setHours(0, at, 0, 0);
+  if (await learnedToday(start.getTime() - 15 * 60000)) return '';
+  const p = learningPicks();
+  return `<section class="card learn-card"><div class="row between"><div><div class="label">📚 Learning time · ${esc(r.learnAt)}</div>
+    <b>${esc(p.type)}</b><br><small>📖 ${esc(p.books[0][0])}</small></div><span class="big-emoji">📚</span></div>
+    <div class="row wrap"><button class="btn primary small" data-act="learn">See today's ideas</button><button class="btn small" data-act="learnStart">⏱ Start now</button></div></section>`;
+}
+function openLearning(salt = 0) {
+  const p = learningPicks(salt), ei = todaysEi(), L = learningFor(S.months);
+  S.learnSalt = salt;
+  openSheet(`<div class="sheet-hd"><h3>📚 Learning time</h3><button class="icon-btn" data-act="close" aria-label="Close">✕</button></div>
+    <p class="muted small">Ideas for ${esc(S.settings.name)} at ${esc(ageText(S.settings.dob))}. Keep it short and fun: stop while ${S.P.he} is still enjoying it.</p>
+    <div class="learn-list">
+      <div class="li"><span>🎯</span><div><b>Today's kind of reading</b><br>${esc(p.type)}</div></div>
+      <div class="li"><span>📖</span><div><b>Books to read</b>${p.books.map(b => `<br>“${esc(b[0])}” <small class="muted">· ${esc(b[1])} · ${esc(b[2])}</small>`).join('')}</div></div>
+      <div class="li"><span>🧩</span><div><b>Material to use</b><br>${esc(p.material)}</div></div>
+      <div class="li"><span>🎵</span><div><b>Rhyme / song</b><br>${esc(p.rhyme)}</div></div>
+      <div class="li ei"><span>💛</span><div><b>Feelings activity today</b><br>${esc(ei)}</div></div>
+    </div>
+    <details class="small"><summary>All books for this age (${L.books.length})</summary><ul>${L.books.map(b => `<li>“${esc(b[0])}” · ${esc(b[1])} <span class="muted">· ${esc(b[2])}</span></li>`).join('')}</ul>
+      <p class="muted">Free Tamil and English picture books: storyweaver.org.in (Pratham Books).</p></details>
+    <div class="row actions"><button class="btn" data-act="learnMore">🔄 Other ideas</button><button class="btn primary" data-act="learnStart">⏱ Start learning</button></div>`, { focus: false });
+}
+async function openMorning(stopped) {
+  const p = learningPicks(), ei = todaysEi(), r = remCfg();
+  const today = dateKey(), eiDone = (await db.byDate(today)).some(e => e.type === 'ei' && e.data?.text === ei);
+  const morning = new Date().getHours() < 12;
+  openSheet(`<div class="sheet-hd"><h3>🌅 ${morning ? 'Good morning' : 'Awake again'}, ${esc(S.settings.name)}!</h3><button class="icon-btn" data-act="close" aria-label="Close">✕</button></div>
+    ${stopped ? `<p class="small">${typeInfo(stopped.type).icon} ${esc(typeInfo(stopped.type).label)}: <b>${fmtDur(entryMinutes(stopped))}</b> (${fmtTime(stopped.start)}–${fmtTime(stopped.end)})</p>` : ''}
+    <div class="learn-list">
+      ${morning ? `<div class="li"><span>📚</span><div><b>Quick learning (5 min)</b><br>${esc(p.morning)}</div></div>` : ''}
+      <div class="li ei"><span>💛</span><div><b>Feelings activity today</b><br>${esc(ei)}
+        <br><button class="btn small ${eiDone ? '' : 'primary'}" data-act="eidone" data-text="${esc(ei)}" ${eiDone ? 'disabled' : ''}>${eiDone ? '✓ Done today' : 'We did it'}</button></div></div>
+      ${r.learn && morning ? `<div class="li"><span>⏰</span><div><b>Learning time at ${esc(r.learnAt)}</b><br><small>${r.on ? 'I will remind you.' : 'Turn on reminders in ⚙️ → Reminders to get an alarm.'}</small></div></div>` : ''}
+    </div>
+    <div class="row actions"><button class="btn" data-act="close">Close</button>${morning ? '<button class="btn primary" data-act="learnStart">⏱ Start 5-min learning</button>' : ''}</div>`, { focus: false });
+}
+
+// ------------------------------------------------------------------ REMINDERS
+let fired = {};
+try { fired = JSON.parse(localStorage.getItem('hp-fired') || '{}'); } catch (e) { fired = {}; }
+function markFired(k) {
+  fired[k] = Date.now();
+  for (const [x, t] of Object.entries(fired)) if (Date.now() - t > 3 * 86400000) delete fired[x];
+  try { localStorage.setItem('hp-fired', JSON.stringify(fired)); } catch (e) { /* ignore */ }
+}
+function chime() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    [880, 660, 880].forEach((f, i) => { const o = ctx.createOscillator(), g = ctx.createGain(); o.frequency.value = f; o.connect(g); g.connect(ctx.destination);
+      const t = ctx.currentTime + i * 0.35; g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.25, t + 0.03); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.3); o.start(t); o.stop(t + 0.32); });
+  } catch (e) { /* no audio */ }
+}
+async function notify(key, title, body, go = '') {
+  if (fired[key]) return;
+  markFired(key);
+  if (remCfg().on && 'Notification' in window && Notification.permission === 'granted') {
+    const opts = { body, icon: 'icons/icon-192.png', badge: 'icons/favicon-64.png', tag: key, data: { go }, vibrate: [300, 150, 300], requireInteraction: go === 'learn' };
+    try { const reg = await navigator.serviceWorker?.getRegistration(); if (reg) await reg.showNotification(title, opts); else new Notification(title, opts); } catch (e) { /* ignore */ }
+  }
+  if (document.visibilityState === 'visible') {
+    chime();
+    toast(`${title} · ${body}`, go ? [['Open', () => handleGo(go)]] : []);
+  }
+}
+function handleGo(go) {
+  if (go === 'learn') openLearning();
+  else if (go === 'doctor' || go === 'week') { S.view = go; route(); }
+  else if (go === 'health') { S.view = 'health'; route(); }
+}
+async function checkReminders() {
+  if (!S.settings?.dob) return;
+  const r = remCfg();
+  if (!r.on) return;
+  const now = Date.now(), today = dateKey(), name = S.settings.name || 'Baby';
+  const todayAt = hm => { const d = new Date(); d.setHours(0, hmToMin(hm), 0, 0); return d.getTime(); };
+  const within = t => now >= t && now < t + 90 * 60000;
+  if (r.learn && within(todayAt(r.learnAt)) && !(await learnedToday(todayAt(r.learnAt) - 15 * 60000))) {
+    const p = learningPicks();
+    await notify(`learn:${today}`, `📚 Learning time for ${name}`, `${p.type} · try “${p.books[0][0]}”`, 'learn');
+  }
+  String(r.custom || '').split('\n').map(l => l.trim()).filter(Boolean).forEach((line, i) => {
+    const m = line.match(/^(\d{1,2})[:.](\d{2})\s*(.*)$/);
+    if (!m) return;
+    const hm = `${m[1].padStart(2, '0')}:${m[2]}`;
+    if (within(todayAt(hm))) notify(`c:${i}:${hm}:${today}`, `⏰ ${m[3] || 'Reminder'}`, `${name} · ${hm}`);
+  });
+  if (r.nap) {
+    const w = await wakeInfo();
+    if (w && w.state !== 'early' && w.awake < w.hi + 60) await notify(`nap:${w.at}`, `😴 ${w.what === 'nap' ? 'Nap' : 'Sleep'} time soon`, `${name} has been awake ${fmtDur(w.awake)}. Watch for yawns and eye-rubbing.`);
+  }
+  if (Number(r.feedHrs) > 0 && S.months < 24) {
+    const feeds = [...await db.byType('breastfeed'), ...await db.byType('bottle')].sort((a, b) => b.start - a.start);
+    const f = feeds[0];
+    if (f && f.end !== null && now - f.start >= Number(r.feedHrs) * 3600000 && now - f.start < (Number(r.feedHrs) + 3) * 3600000)
+      await notify(`feed:${f.id}`, '🍼 Feed due', `Last feed ${agoText(f.start)} (${fmtTime(f.start)}${f.data?.side ? ', ' + f.data.side : ''}).`);
+  }
+  if (r.meds) {
+    const h = await healthData();
+    const ill = h.ill.find(i => !i.data?.recovered);
+    for (const rx of activeRx(h, ill?.id)) for (const m of rx.data?.meds || []) {
+      const last = medStatus(h, m.name), gap = FREQ_HOURS[m.freq];
+      if (last && gap && now >= last.start + gap * 3600000) await notify(`med:${m.name}:${last.id}`, `💊 ${m.name} due`, `${m.dose || ''} · last given ${fmtTime(last.start)}`.trim(), 'health');
+    }
+  }
+  if (r.vax && new Date().getHours() >= 10) {
+    const state = await db.getKV('vaccines', {}), dob = parseKey(S.settings.dob);
+    const next = UIP_VACCINES.map(v => { const d = new Date(dob); d.setDate(d.getDate() + Math.round(v.at * 30.4375)); return { ...v, dk: dateKey(d), done: state[`uip:${v.at}`] }; })
+      .find(v => !v.done && v.dk <= addDays(today, 7) && v.dk >= addDays(today, -30));
+    if (next) await notify(`vax:${next.at}:${today}`, '💉 Vaccine due', `${next.label}: ${next.name} (around ${fmtDateShort(next.dk)}). Free at government hospitals.`);
+  }
+}
+function calendarLink(r) {
+  const d = new Date(); const [h, m] = r.learnAt.split(':').map(Number); d.setHours(h, m, 0, 0);
+  if (d < new Date()) d.setDate(d.getDate() + 1);
+  const pad2 = n => String(n).padStart(2, '0');
+  const f = x => `${x.getFullYear()}${pad2(x.getMonth() + 1)}${pad2(x.getDate())}T${pad2(x.getHours())}${pad2(x.getMinutes())}00`;
+  const e = new Date(d.getTime() + 30 * 60000);
+  const q = new URLSearchParams({ action: 'TEMPLATE', text: `📚 Learning time for ${S.settings.name}`, dates: `${f(d)}/${f(e)}`, recur: 'RRULE:FREQ=DAILY',
+    details: `Open Happy Parenthood → Learning time for today's book, material, rhyme and feelings activity.\n${location.href.split('?')[0]}` });
+  return `https://calendar.google.com/calendar/render?${q}`;
+}
+function remindersSection() {
+  const r = remCfg(), perm = 'Notification' in window ? Notification.permission : 'unsupported';
+  const tog = (k, label, sub) => `<label class="check"><input type="checkbox" name="${k}" ${r[k] ? 'checked' : ''}> <span><b>${label}</b>${sub ? `<br><small class="muted">${sub}</small>` : ''}</span></label>`;
+  return `<form id="remForm" class="card rem-form">
+      <label class="check big"><input type="checkbox" name="on" ${r.on ? 'checked' : ''}> <span><b>Turn on reminders & alarms</b><br><small class="muted">${perm === 'granted' ? '✓ Notifications allowed on this phone' : perm === 'denied' ? '⚠️ Notifications are blocked: allow them in Chrome → Site settings → Notifications' : perm === 'unsupported' ? 'This browser cannot show notifications; reminders show inside the app.' : 'The phone will ask to allow notifications.'}</small></span></label>
+      <div class="label">📚 Learning time</div>
+      ${tog('learn', 'Daily learning alarm', 'Shows today\'s book, material, rhyme and feelings activity')}
+      <label>Time<input type="time" name="learnAt" value="${esc(r.learnAt)}"></label>
+      <div class="label">👶 Baby care</div>
+      ${tog('nap', 'Nap time', `When ${S.P.he} has been awake for ${S.P.his} usual time`)}
+      <label>Feed reminder<select name="feedHrs">${[[0, 'Off'], [2, 'Every 2 hours'], [2.5, 'Every 2½ hours'], [3, 'Every 3 hours'], [3.5, 'Every 3½ hours'], [4, 'Every 4 hours']].map(([v, l]) => `<option value="${v}" ${Number(r.feedHrs) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      ${tog('meds', 'Medicines', 'When a prescribed medicine is due during an illness')}
+      ${tog('vax', 'Vaccines', 'A week before a government-schedule vaccine is due')}
+      <div class="label">⏰ My own daily reminders</div>
+      <label>One per line: time and what<textarea name="custom" rows="3" placeholder="08:00 Vitamin D drops&#10;17:30 Evening walk">${esc(r.custom || '')}</textarea></label>
+      <div class="row wrap"><button class="btn primary">Save</button><button type="button" class="btn" data-act="remTest">🔔 Test alarm</button></div>
+    </form>
+    <section class="card small"><b>Good to know</b><ul>
+      <li>Reminders ring when the app is open or was used recently. Android may pause web apps that have been closed for a long time.</li>
+      <li>For a learning alarm that <b>always</b> rings, add it to Google Calendar as a daily event: <a class="btn small" href="${calendarLink(r)}" target="_blank" rel="noopener">📅 Add daily ${esc(r.learnAt)} alarm to Calendar</a></li>
+    </ul></section>`;
+}
+
+// ------------------------------------------------------------------ DOCTOR VISIT SUMMARY
+async function renderDoctor() {
+  const s = S.settings, today = dateKey(), from = addDays(today, -13);
+  const all = await db.range(addDays(from, -1), today);
+  const days = [...Array(14)].map((_, i) => summarize(all, addDays(from, i)));
+  const logged = days.filter(d => d.sleepMin || d.feeds || d.meals || d.pee);
+  const avg = f => logged.length ? logged.reduce((a, d) => a + f(d), 0) / logged.length : 0;
+  const h = await healthData();
+  const g = (await db.byType('growth')).sort((a, b) => b.start - a.start);
+  const growth = [['wfa', 'weight'], ['hfa', 'height'], ['hca', 'head']].map(([ind, key]) => {
+    const e = g.find(x => x.data?.[key]); if (!e) return '';
+    const z = zScore(ind, s.sex, ageMonths(s.dob, e.start, Number(s.premature) || 0), e.data[key]);
+    return `<tr><td>${INDICATORS[ind].label}</td><td><b>${e.data[key]} ${INDICATORS[ind].unit}</b><br><small class="muted">${esc(fmtDateShort(e.date))}</small></td><td>${z != null ? `${percentile(z)}th · ${esc(zLabel(z)[1])}` : ''}</td></tr>`;
+  }).join('');
+  const ill = h.ill.filter(i => !i.data?.recovered || i.date >= addDays(today, -90));
+  const meds30 = {};
+  h.meds.filter(m => m.date >= addDays(today, -30)).forEach(m => { const n = m.data?.name || 'Medicine'; meds30[n] = (meds30[n] || 0) + 1; });
+  const vstate = await db.getKV('vaccines', {}), dob = parseKey(s.dob);
+  const vax = UIP_VACCINES.map(v => { const d = new Date(dob); d.setDate(d.getDate() + Math.round(v.at * 30.4375)); return { ...v, dk: dateKey(d), done: vstate[`uip:${v.at}`] }; });
+  const vNext = vax.find(v => !v.done), vLate = vax.filter(v => !v.done && v.dk < today);
+  const ms = await db.getKV('milestones', {}), { passed } = milestoneFocus(S.months);
+  const notYet = passed ? passed.items.map((it, i) => ({ it, k: `${passed.at}:${i}` })).filter(x => !ms[x.k]).map(x => x.it[1]) : [];
+  const newMs = Object.entries(ms).filter(([, d]) => typeof d === 'string' && d >= addDays(today, -60)).length;
+  const foods = Object.entries(await db.getKV('foods', {}));
+  const reactions = foods.filter(([, f]) => f.reactions?.length).map(([n]) => n);
+  const qs = await db.getKV('doctorQs', []);
+  main().innerHTML = `<div class="no-print">${backBar()}</div>
+    <div class="doc-sheet">
+    <h2>🩺 Doctor visit summary</h2>
+    <p><b>${esc(s.name)}</b> · ${s.sex === 'girl' ? 'Girl' : 'Boy'} · born ${esc(fmtDateLong(s.dob))} · <b>${esc(ageText(s.dob))}</b>${Number(s.premature) ? ` · born ${s.premature} weeks early` : ''}<br><small class="muted">Prepared ${esc(fmtDateLong(today))} from the family's ${APP_NAME} log</small></p>
+    <section class="card"><div class="label">❓ Questions for the doctor</div>
+      ${qs.length ? `<ul class="qs">${qs.map(q => `<li class="${q.done ? 'done' : ''}"><label class="check"><input type="checkbox" data-q="${q.id}" ${q.done ? 'checked' : ''}> <span>${esc(q.text)}</span></label><button class="icon-btn no-print" data-act="qDel" data-id="${q.id}" aria-label="Remove">✕</button></li>`).join('')}</ul>` : '<p class="muted small">No questions yet. Add them whenever you think of one.</p>'}
+      <form id="qForm" class="row no-print"><input name="q" placeholder="e.g. Is his sleep enough?" aria-label="New question"><button class="btn small primary">Add</button></form></section>
+    <section class="card"><div class="label">📏 Growth (latest)</div>${growth ? `<table class="meds"><tbody>${growth}</tbody></table><p class="muted small">Percentiles use the WHO Child Growth Standards.</p>` : '<p class="muted small">No weight or height logged yet.</p>'}</section>
+    <section class="card"><div class="label">📅 Last 14 days (average per logged day, ${logged.length} days logged)</div>
+      <div class="summary-grid">
+        <div><b>${fmtDur(avg(d => d.sleepMin))}</b><span>sleep</span></div><div><b>${avg(d => d.napCount).toFixed(1)}</b><span>naps</span></div>
+        ${S.months < 24 ? `<div><b>${avg(d => d.feeds).toFixed(1)}</b><span>milk feeds</span></div>` : ''}<div><b>${avg(d => d.meals).toFixed(1)}</b><span>meals</span></div>
+        <div><b>${avg(d => d.pee).toFixed(1)}</b><span>wet / pee</span></div><div><b>${avg(d => d.poop).toFixed(1)}</b><span>poop</span></div>
+      </div>
+      <p class="small">Aim for ${esc(S.stage.name)}: sleep ${S.stage.targets.sleep[0]}–${S.stage.targets.sleep[1]} h${S.stage.targets.feeds[1] ? ` · milk feeds ${S.stage.targets.feeds[0]}–${S.stage.targets.feeds[1]}` : ''}${S.stage.targets.meals ? ` · ${S.stage.targets.meals} meals` : ''}.</p>
+      ${foods.length ? `<p class="small"><b>Foods tried:</b> ${foods.length}${reactions.length ? ` · <b>reactions noted:</b> ${esc(reactions.join(', '))}` : ''}</p>` : ''}</section>
+    <section class="card"><div class="label">🤒 Illnesses (last 3 months)</div>
+      ${ill.length ? `<ul class="mini-list">${ill.map(i => `<li><b>${esc(i.data?.title || 'Illness')}</b> · ${esc(fmtDateShort(i.date))}${i.data?.recovered ? `–${esc(fmtDateShort(i.data.recovered))}` : ' · ongoing'}${i.data?.symptoms?.length ? ` · ${esc(i.data.symptoms.join(', '))}` : ''}${i.data?.diagnosis ? ` · ${esc(i.data.diagnosis)}` : ''}</li>`).join('')}</ul>` : '<p class="muted small">None logged.</p>'}
+      ${Object.keys(meds30).length ? `<p class="small"><b>Medicines given (30 days):</b> ${esc(Object.entries(meds30).map(([n, c]) => `${n} ×${c}`).join(', '))}</p>` : ''}</section>
+    <section class="card"><div class="label">💉 Vaccines (government schedule)</div>
+      <p class="small">${vLate.length ? `⚠️ Not marked as given: ${esc(vLate.map(v => v.label).join(', '))}<br>` : ''}${vNext ? `Next: <b>${esc(vNext.label)}</b> — ${esc(vNext.name)} (around ${esc(fmtDateShort(vNext.dk))})` : '✓ All marked as given'}</p></section>
+    <section class="card"><div class="label">🎯 Development</div>
+      <p class="small">${newMs} milestone${newMs === 1 ? '' : 's'} ticked in the last 2 months.</p>
+      ${notYet.length ? `<p class="small"><b>Not seen yet (most children do these by ${esc(ageLabel(passed.at))}):</b></p><ul class="small">${notYet.map(t => `<li>${esc(t)}</li>`).join('')}</ul>` : `<p class="small">✓ All milestones for ${esc(ageLabel(passed?.at))} ticked.</p>`}</section>
+    <p class="muted small">This is a parent's log to help the conversation, not a diagnosis. Always follow your paediatrician's advice. Emergency: call 108 / 112.</p>
+    </div>
+    <div class="row wrap no-print"><button class="btn primary" data-act="print">🖨️ Save as PDF / print</button><button class="btn" data-act="shareDoc">📤 Share as text</button></div>`;
+  $('#qForm')?.addEventListener('submit', async ev => {
+    ev.preventDefault();
+    const text = new FormData(ev.target).get('q').trim(); if (!text) return;
+    await db.setKV('doctorQs', [...await db.getKV('doctorQs', []), { id: uid(), text, done: false, at: Date.now() }]);
+    route();
+  });
+}
+
+// ------------------------------------------------------------------ WEEKLY REPORT CARD
+async function weekData(endKey) {
+  const from = addDays(endKey, -6), pFrom = addDays(endKey, -13);
+  const all = await db.range(addDays(pFrom, -1), endKey);
+  const sumDays = start => [...Array(7)].map((_, i) => ({ d: addDays(start, i), s: summarize(all, addDays(start, i)) }));
+  const cur = sumDays(from), prev = sumDays(pFrom);
+  const avg = (arr, f) => { const l = arr.filter(x => Object.values(x.s).some(v => typeof v === 'number' && v > 0)); return l.length ? l.reduce((a, x) => a + f(x.s), 0) / l.length : 0; };
+  const total = (arr, f) => arr.reduce((a, x) => a + f(x.s), 0);
+  const ms = await db.getKV('milestones', {}), foods = await db.getKV('foods', {});
+  const inRange = d => typeof d === 'string' && d >= from && d <= endKey;
+  const mems = all.filter(e => e.type === 'memory' && e.date >= from).sort((a, b) => a.start - b.start);
+  const ei = all.filter(e => e.type === 'ei' && e.date >= from).length;
+  return { from, to: endKey, cur, prev, avg, total, newMs: Object.values(ms).filter(inRange).length, newFoods: Object.entries(foods).filter(([, f]) => inRange(f.first)).map(([n]) => n), mems, ei };
+}
+async function renderWeek() {
+  const end = dateKey();
+  const w = await weekData(end);
+  const row = (icon, label, f, fmt, goodUp = true) => {
+    const a = w.avg(w.cur, f), b = w.avg(w.prev, f);
+    const diff = b ? (a - b) / b : 0;
+    const arrow = !b || Math.abs(diff) < 0.05 ? '' : (diff > 0) === goodUp ? `<span class="up">▲</span>` : `<span class="down">▼</span>`;
+    return `<tr><td>${icon} ${label}</td><td><b>${fmt(a)}</b> ${arrow}</td><td class="muted">${b ? fmt(b) : '—'}</td></tr>`;
+  };
+  const d1 = v => v.toFixed(1), dur = v => fmtDur(v);
+  const sleepBars = w.cur.map(({ d, s }) => ({ label: parseKey(d).toLocaleDateString(undefined, { weekday: 'short' }), value: s.sleepMin / 60 }));
+  main().innerHTML = `${backBar()}<h2>📊 ${esc(S.settings.name)}'s week</h2>
+    <p class="muted">${esc(fmtDateShort(w.from))} – ${esc(fmtDateShort(w.to))} · compared with the week before</p>
+    <section class="tiles week-tiles">
+      ${tile('⭐', 'Milestones', w.newMs, '', null, 'newly ticked')}${tile('🥕', 'New foods', w.newFoods.length, '', null, w.newFoods.slice(0, 3).join(', '))}
+      ${tile('✨', 'New things', w.mems.length, '', null, '')}${tile('💛', 'Feelings activities', w.ei, '', null, 'done')}
+    </section>
+    <section class="card"><table class="meds week-table"><thead><tr><th>Average per day</th><th>This week</th><th>Last week</th></tr></thead><tbody>
+      ${row('🌙', 'Sleep', s => s.sleepMin, dur)}${S.stage.targets.naps[1] ? row('😴', 'Naps', s => s.napCount, d1) : ''}
+      ${S.months < 24 ? row('🍼', 'Milk feeds', s => s.feeds, d1) : ''}${S.months >= 5 ? row('🥣', 'Meals', s => s.meals, d1) : ''}
+      ${row('🌳', 'Outdoor', s => s.outdoorMin, dur)}${row('🧸', 'Play', s => s.playMin, dur)}${row('📚', 'Learning', s => s.learnMin, dur)}
+      ${S.months >= 18 ? row('📱', 'Screen', s => s.screenMin, dur, false) : ''}${row('💗', 'Kind moments', s => s.pos, d1)}
+    </tbody></table><p class="muted small">▲ ▼ show changes over 5% (green = in a good direction). Days with nothing logged are left out.</p></section>
+    ${barChart({ title: 'Sleep each day (hours)', data: sleepBars, unit: ' h', target: S.stage.targets.sleep })}
+    ${w.mems.length ? `<section class="card"><div class="label">✨ This week's new things</div><ul class="mini-list">${w.mems.map(e => `<li><b>${esc(fmtDateShort(e.date))}</b> ${esc(e.data?.text || e.note)}</li>`).join('')}</ul></section>` : ''}
+    <div class="row wrap"><button class="btn primary" data-act="shareWeek">📤 Share with family</button></div>`;
+}
+async function weekBanner() {
+  const day = new Date().getDay();
+  if (day !== 0 && day !== 1) return '';
+  const wk = `${new Date().getFullYear()}-${Math.floor(dayOfYear() / 7)}`;
+  if ((await db.getKV('weekSeen')) === wk) return '';
+  const w = await weekData(dateKey());
+  if (!w.cur.some(x => x.s.sleepMin || x.s.feeds || x.s.meals)) return '';
+  return `<section class="card week-banner"><div class="row between"><div><b>📊 ${esc(S.settings.name)}'s week is ready</b><br><small>Sleep ${fmtDur(w.avg(w.cur, s => s.sleepMin))}/day · ${w.newMs} milestones · ${w.newFoods.length} new foods</small></div>
+    <button class="btn small primary" data-act="openWeek" data-wk="${wk}">See it</button></div></section>`;
+}
+async function shareText(text, title) {
+  if (navigator.share) { try { await navigator.share({ title, text }); return; } catch (e) { if (e.name === 'AbortError') return; } }
+  try { await navigator.clipboard.writeText(text); toast('Copied — paste it in WhatsApp'); } catch (e) { alert(text); }
 }
 
 // ------------------------------------------------------------------ events
@@ -1878,6 +2209,7 @@ async function handleClick(el, a, ev) {
       toast(msg, [['Undo', async () => { await db.del(saved.id); if (stopped) { stopped.end = null; await db.put(stopped); } route(); }],
         ['Details', () => openForm(type, saved)]]);
       route();
+      if (type === 'wake') openMorning(stopped);
       break;
     }
     case 'toggle': await toggleTimer(el.dataset.type); break;
@@ -1891,6 +2223,23 @@ async function handleClick(el, a, ev) {
       break;
     }
     case 'toastAct': { const f = toast._actions?.[Number(el.dataset.i)]; $('#toast').hidden = true; if (f) await f(); break; }
+    case 'learn': openLearning(); break;
+    case 'learnMore': openLearning((S.learnSalt || 0) + 1); break;
+    case 'learnStart': closeSheet(); { const run = (await db.byType('study')).find(e => !e.end); if (!run) await toggleTimer('study'); else toast('📚 Learning timer is already running'); } break;
+    case 'remTest': {
+      if ('Notification' in window && Notification.permission === 'default') { try { await Notification.requestPermission(); } catch (e) { /* ignore */ } }
+      delete fired.test;
+      const p = learningPicks();
+      const was = S.settings.rem; S.settings.rem = { ...remCfg(), on: true };
+      await notify('test', `📚 Learning time for ${S.settings.name}`, `${p.type} · try “${p.books[0][0]}”`, 'learn');
+      S.settings.rem = was; delete fired.test;
+      break;
+    }
+    case 'print': window.print(); break;
+    case 'shareDoc': shareText(main().querySelector('.doc-sheet').innerText.replace(/\n{3,}/g, '\n\n'), 'Doctor visit summary'); break;
+    case 'shareWeek': shareText(main().innerText.replace(/Share with family|‹ More/g, '').replace(/\n{3,}/g, '\n\n').trim(), `${S.settings.name}'s week`); break;
+    case 'openWeek': await db.setKV('weekSeen', el.dataset.wk); S.view = 'week'; route(); break;
+    case 'qDel': await db.setKV('doctorQs', (await db.getKV('doctorQs', [])).filter(q => q.id !== el.dataset.id)); route(); break;
     case 'eidone': {
       await db.put({ id: uid(), type: 'ei', start: Date.now(), end: null, date: dateKey(), data: { text: el.dataset.text }, note: '', by: S.settings.me, createdAt: Date.now() });
       toast('💛 Lovely! Logged.'); route(); break;
@@ -2049,6 +2398,7 @@ async function onChange(ev) {
   const t = ev.target;
   if (t.id === 'diaryDate' && t.value) { S.sel.clear(); S.diaryDate = t.value > dateKey() ? dateKey() : t.value; route(); }
   if (t.id === 'guideAll') { S.guideAll = t.checked; route(); }
+  if (t.dataset.q) { const qs = await db.getKV('doctorQs', []); const q = qs.find(x => x.id === t.dataset.q); if (q) { q.done = t.checked; await db.setKV('doctorQs', qs); t.closest('li')?.classList.toggle('done', t.checked); } }
   if (t.id === 'importFile' && t.files[0]) importJSON(t.files[0]);
   if (t.id === 'vLang') { S.settings.voiceLang = t.value; await db.setKV('settings', S.settings); }
   if (t.id === 'photoInput' && t.files.length) {
