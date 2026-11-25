@@ -231,7 +231,7 @@ function applyAgeTheme() {
   document.querySelector('meta[name=theme-color]')?.setAttribute('content', th.accent);
 }
 
-const NAV_OF = { home: 'home', diary: 'diary', health: 'health', heart: 'heart', more: 'more', grow: 'more', routine: 'more', guide: 'more', settings: 'more', ask: 'more', doctor: 'health', week: 'more', mom: 'more' };
+const NAV_OF = { home: 'home', diary: 'diary', health: 'health', heart: 'heart', more: 'more', grow: 'more', routine: 'more', guide: 'more', settings: 'more', ask: 'more', doctor: 'health', week: 'more', mom: 'home' };
 let lastPage = '';
 // Re-render the current screen. The scroll position is kept when staying on the same
 // screen (e.g. after tapping a button or a checkbox) and reset only when changing screens.
@@ -346,7 +346,8 @@ async function renderHome() {
     ${await weekBanner()}
     ${await lastFeedStrip()}
     ${await wakeStrip()}
-    ${(await learningCard()) || todayStrip()}
+    ${await routineRow()}
+    ${await todayStrip()}
     <div class="cats" role="tablist" aria-label="Categories">
       ${cats.map(c => { const n = running.filter(e => (CAT[e.type] || 'feel') === c.k).length; return `<button class="cat c-${c.k}" role="tab" data-act="homeCat" data-cat="${c.k}" aria-selected="${c.k === S.homeCat}"><span class="ci">${c.icon}</span><span class="cl">${c.label}</span>${n ? '<i class="dot" aria-label="timer running"></i>' : ''}</button>`; }).join('')}
       <button class="cat all" data-act="openPicker"><span class="ci">＋</span><span class="cl">All</span></button>
@@ -355,6 +356,7 @@ async function renderHome() {
     ${otherRunning.map(e => `<div class="run-pill c-${CAT[e.type] || 'feel'}"><span>${typeInfo(e.type).icon} <b>${esc(typeInfo(e.type).label)}</b> <span data-since="${e.start}">${fmtDur(entryMinutes(e))}</span></span>
       <button class="pill-btn" data-act="toggle" data-type="${e.type}">Stop</button></div>`).join('')}
     <section class="glance" aria-label="Today at a glance">${glanceForAge(sm)}</section>
+    ${tipRow()}
     ${homeMoreButtons()}
     <p class="muted small center">Today's full timeline is in <button class="linkish" data-act="view" data-view="diary">📒 Diary</button>.</p>`;
 }
@@ -1073,21 +1075,17 @@ async function askQuestion(q) {
 // ------------------------------------------------------------------ MORE
 function renderMore() {
   const cards = [
-    ['ask', '💬', 'Ask', 'Parenting questions, offline'], ['routine', '🕒', 'Routine', `Timetable for ${S.P.his} age`], ['grow:milestones', '🎯', 'Milestones', `Tick what ${S.P.he} can do`],
-    ['grow:memories', '✨', 'New things', 'Firsts & memories'], ['grow:trends', '📈', 'Trends', 'Sleep, food, play charts'],
-    ['grow:physical', '📏', 'Physical growth', 'Monthly checks & WHO charts'], ['grow:foods', '🥕', 'Foods tried', 'Food diary & reactions'],
-    ['grow:vaccines', '💉', 'Vaccines', 'Government schedule'], ['guide', '📖', 'Guide', 'Parenting library'],
-    ['week', '📊', 'Weekly report', 'This week vs last week'], ['doctor', '🩺', 'Doctor summary', 'For the next visit, as PDF'],
-    ['grow:teeth', '🦷', 'Teeth', 'Tap each new tooth'], ['mom', '💗', "Amma's wellbeing", 'One-minute check-in'],
-    ['settings', '⚙️', 'Settings', 'Profile, backup, buttons'],
+    // Only things not already on Home, Health or the top bar (💬 Ask and ⚙️ Settings are there)
+    ['routine', '🕒', 'Routine', `Timetable for ${S.P.his} age`], ['grow:milestones', '🎯', 'Milestones', `Tick what ${S.P.he} can do`],
+    ['grow:memories', '✨', 'New things', 'Firsts & memories'], ['grow:physical', '📏', 'Physical growth', 'Monthly checks & WHO charts'],
+    ['grow:teeth', '🦷', 'Teeth', 'Tap each new tooth'], ['grow:trends', '📈', 'Trends', 'Sleep, food, play charts'],
+    ['week', '📊', 'Weekly report', 'This week vs last week'], ['guide', '📖', 'Guide', 'Parenting library'],
   ];
   main().innerHTML = `<h2>More</h2>
     <section class="more-grid">${cards.map(([v, i, t, s]) => {
       const [view, tab] = v.split(':');
       return `<button class="more-card" data-act="${tab ? 'goGrow' : 'view'}" data-view="${view}" ${tab ? `data-tab="${tab}"` : ''}><span>${i}</span><b>${t}</b><small>${s}</small></button>`;
     }).join('')}
-    <button class="more-card" data-act="learn"><span>📚</span><b>Learning time</b><small>Today's books & ideas</small></button>
-    ${!isStandalone() ? `<button class="more-card" data-act="install"><span>📲</span><b>Install app</b><small>Add to home screen</small></button>` : ''}
     </section>`;
 }
 
@@ -1166,7 +1164,7 @@ async function renderHeart() {
   const row = eiRowFor(S.months);
   const ageDays = (Date.now() - parseKey(S.settings.dob).getTime()) / 86400000;
   const week = S.months < 37 ? Math.min(4, Math.floor((S.months % 1) * 4.35) + 1) : Math.floor((ageDays % 365.25) / 7) + 1;
-  const weekAct = row.acts[(week - 1) % row.acts.length];
+  const weekAct = todaysEi();
   const todayKey = dateKey();
   const doneToday = (await db.byDate(todayKey)).filter(e => e.type === 'ei').map(e => e.data?.text);
   const rowAge = r => r.m != null ? (r.m === 0 ? 'Birth–1 m' : r.m < 24 ? `${r.m} m` : `${r.m} m (${(r.m / 12).toFixed(1).replace('.0', '')} y)`) : `${r.y - 1}–${r.y} y`;
@@ -1876,15 +1874,47 @@ function learningPicks(salt = 0) {
   return { type: at(L.types), books: [at(L.books), L.books.length > 1 ? at(L.books, Math.ceil(L.books.length / 2)) : null].filter(Boolean),
     material: at(L.materials), rhyme: at(L.rhymes), morning: fillName(at(L.morning)) };
 }
-const todaysEi = () => pickDaily(S.stage.ei.activities, 0);
+// The Heart tab's "this week" activity is THE feelings activity of the day everywhere in the app.
+function todaysEi() {
+  const row = eiRowFor(S.months);
+  if (!row?.acts?.length) return pickDaily(S.stage.ei.activities, 0);
+  const ageDays = (Date.now() - parseKey(S.settings.dob).getTime()) / 86400000;
+  const week = S.months < 37 ? Math.min(4, Math.floor((S.months % 1) * 4.35) + 1) : Math.floor((ageDays % 365.25) / 7) + 1;
+  return row.acts[(week - 1) % row.acts.length];
+}
 async function learnedToday(after = 0) {
   return (await db.byDate(dateKey())).some(e => ['study', 'reading', 'homework'].includes(e.type) && e.start >= after);
 }
-function todayStrip() {
-  const ei = todaysEi();
+async function todayStrip() {
+  const r = remCfg(), now = new Date(), min = now.getHours() * 60 + now.getMinutes(), at = hmToMin(r.learnAt);
+  const learnNow = r.learn && min >= at - 15 && min <= at + 120 && !(await learnedToday(new Date().setHours(0, at - 15, 0, 0)));
+  const eiDone = (await db.byDate(dateKey())).some(e => e.type === 'ei' && e.data?.text === todaysEi());
+  // new food: 3-day watch first, otherwise the next food to try
+  let foodSub = 'Try something new', foodShow = S.months >= 5.5;
+  if (foodShow) {
+    const map = await db.getKV('foods', {}), today = dateKey();
+    const recent = Object.entries(map).filter(([, f]) => f.first >= addDays(today, -2)).sort((a, b) => b[1].first.localeCompare(a[1].first))[0];
+    if (recent) foodSub = `Day ${Math.round((parseKey(today) - parseKey(recent[1].first)) / 86400000) + 1} of 3: ${recent[0]}`;
+    else { const nx = untriedFoods(FIRST_FOODS.find(b => S.months < b.max), Object.keys(map).map(n => n.toLowerCase()))[0]; if (nx) foodSub = `Try: ${nx}`; }
+  }
+  const mom = (await mainDb.getKV('mom', {}))[dateKey()];
+  const momSub = mom?.mood != null ? `Today ${MOODS[mom.mood][0]} ${MOODS[mom.mood][1]}` : 'One-minute check-in';
   return `<section class="today-strip">
-    <button class="tbtn c-learn" data-act="learn"><span class="ib">📚</span><b>Learning time</b><small>Book, material & rhyme</small></button>
-    <button class="tbtn c-feel" data-act="eiToday"><span class="ib">💛</span><b>Feelings activity</b><small>Today's activity</small></button></section>`;
+    <button class="tbtn c-learn ${learnNow ? 'now' : ''}" data-act="learn"><span class="ib">📚</span><b>Learning time</b><small>${learnNow ? `It's time! · ${esc(r.learnAt)}` : 'Book, material & rhyme'}</small></button>
+    <button class="tbtn c-feel" data-act="eiToday"><span class="ib">💛</span><b>Feelings activity</b><small>${eiDone ? '✓ Done today' : "Today's activity"}</small></button>
+    ${foodShow ? `<button class="tbtn c-food" data-act="goGrow" data-tab="foods"><span class="ib">🥕</span><b>New food</b><small>${esc(foodSub.length > 30 ? foodSub.slice(0, 28) + '…' : foodSub)}</small></button>` : ''}
+    <button class="tbtn c-health" data-act="view" data-view="mom"><span class="ib">💗</span><b>Amma's wellbeing</b><small>${esc(momSub)}</small></button></section>`;
+}
+async function routineRow() {
+  const routine = await getRoutine();
+  if (!routine.length) return '';
+  const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+  const nx = routine.find(r => r.min >= nowMin - 10) || routine[0];
+  return `<button class="rcard c-care" data-act="view" data-view="routine"><span class="ib">🕒</span><span class="rtext"><b>Next: ${minToHm(nx.min)} · ${esc(nx.label)}</b><small>From ${S.P.his} daily routine · tap for the timetable</small></span><span class="chev" aria-hidden="true">›</span></button>`;
+}
+function tipRow() {
+  const tip = pickDaily(DAILY_TIPS.filter(t => S.months >= t.min && S.months < t.max), 1)?.text;
+  return tip ? `<section class="rcard c-play"><span class="ib">🌱</span><span class="rtext"><b>Tip of the day</b><small>${esc(tip)}</small></span></section>` : '';
 }
 async function openEiToday() {
   const ei = todaysEi(), today = dateKey(), row = eiRowFor(S.months);
@@ -1895,17 +1925,6 @@ async function openEiToday() {
       ${row ? `<div class="li"><span>🌱</span><div><b>This month: ${esc(row.focus)}</b><br><small>${esc(row.develops)}</small>${row.acts?.length ? `<br><small>Also try: ${esc(row.acts.join(' · '))}</small>` : ''}</div></div>` : ''}
       <div class="li"><span>🔁</span><div><b>Serve and return</b><br><small>${esc(SERVE_RETURN)}</small><br><a class="small" href="${LINKS.serveReturn}" target="_blank" rel="noopener">Harvard: 5 steps for serve and return ↗</a></div></div>
     </div>`, { focus: false });
-}
-async function learningCard() {
-  const r = remCfg();
-  if (!r.learn) return '';
-  const now = new Date(), at = hmToMin(r.learnAt), min = now.getHours() * 60 + now.getMinutes();
-  if (min < at - 15 || min > at + 120) return '';
-  const start = new Date(); start.setHours(0, at, 0, 0);
-  if (await learnedToday(start.getTime() - 15 * 60000)) return '';
-  const p = learningPicks();
-  return `<section class="rcard c-learn learn-row"><span class="ib">📚</span><span class="rtext"><b>Learning time · ${esc(r.learnAt)}</b><small>${esc(p.type)} · “${esc(p.books[0][0])}”</small></span>
-    <span class="ractions"><button class="btn primary small" data-act="learn">Today's ideas</button><button class="btn small" data-act="learnStart">⏱ Start</button></span></section>`;
 }
 function openLearning(salt = 0) {
   const p = learningPicks(salt), ei = todaysEi(), L = learningFor(S.months);
@@ -2316,7 +2335,7 @@ function homeMoreButtons() {
   return `<section class="home-more" aria-label="More about today">
     <button class="tbtn c-learn" data-act="homeSheet" data-k="summary"><span class="ib">📊</span><b>Summary</b><small>Today vs aim</small></button>
     <button class="tbtn c-sleep" data-act="homeSheet" data-k="pattern"><span class="ib">🗓️</span><b>Pattern</b><small>Day by day</small></button>
-    <button class="tbtn c-play" data-act="homeSheet" data-k="month"><span class="ib">${S.theme.emoji}</span><b>This month</b><small>Milestones & tips</small></button>
+    <button class="tbtn c-play" data-act="homeSheet" data-k="month"><span class="ib">${S.theme.emoji}</span><b>This month</b><small>Milestones & month card</small></button>
   </section>`;
 }
 async function openHomeSheet(k) {
@@ -2369,10 +2388,7 @@ async function monthSections() {
     out.push({ k: 'phys', icon: '📏', title: 'Body checks', sub: `${d}/${phys.items.length} for month ${phys.m}`, html: `<p>${d} of ${phys.items.length} checks for month ${phys.m} done.</p><button class="btn primary" data-act="goGrow" data-tab="physical">Open body checks & growth chart</button>` }); }
   out.push({ k: 'news', icon: '✨', title: 'New things', sub: `${news.length} this month`, html: `${news.length ? `<ul class="mini-list">${news.map(e => `<li data-act="edit" data-id="${e.id}"><b>${esc(fmtDateShort(e.date))}</b> ${esc(e.data?.text || e.note)}</li>`).join('')}</ul>` : '<p class="muted small">Clapped? Said a new word? Stood up? Add it here.</p>'}
     <button class="btn primary" data-act="form" data-type="memory" data-first="1">＋ Add a new thing</button>` });
-  out.push({ k: 'ei', icon: '💛', title: 'Feelings activity', sub: eiDone ? '✓ done today' : 'for today', html: `<p>${esc(ei)}</p><button class="btn ${eiDone ? '' : 'primary'}" data-act="eidone" data-text="${esc(ei)}" ${eiDone ? 'disabled' : ''}>${eiDone ? '✓ Done today' : 'We did it'}</button>` });
-  out.push({ k: 'tip', icon: '🌱', title: 'Tip of the day', sub: tip.length > 34 ? tip.slice(0, 32) + '…' : tip, html: `<p>${esc(tip)}</p>` });
   out.push({ k: 'card', icon: '📸', title: 'Month card', sub: 'Photo card to share', html: '' });
-  out.push({ k: 'routine', icon: '🕒', title: 'Next in routine', sub: `${minToHm(nx.min)} · ${nx.label}`, html: `<p><b>${minToHm(nx.min)}</b> · ${esc(nx.label)}</p><button class="btn primary" data-act="view" data-view="routine">Open the timetable</button>` });
   return out;
 }
 async function openMonth(k = null) {
@@ -2504,6 +2520,10 @@ const FIRST_FOODS = [
   { max: 13, foods: ['Idiyappam', 'Whole egg (well cooked)', 'Vegetable rice (mashed)', 'Chicken soup', 'Puttu', 'Steamed kozhukattai', 'Sambar rice (mild)', 'Soft fruit pieces', 'Peanut powder in porridge', 'Sesame (ellu) powder', 'Curd rice', 'Wheat dosa'] },
   { max: 999, foods: ['Family meals with less spice and salt', 'Millet dosa (ragi, kambu)', 'Sundal', 'Vegetable kurma with chapati', 'Fruit salad', 'Egg bhurji', 'Fish curry (boneless)', 'Lemon rice', 'Keerai poriyal', 'Paneer paratha'] },
 ];
+// The main word of a food ("Soft idli" → "idli") to see whether it was already tried
+const FOOD_STOP = new Set(['mashed', 'mash', 'soft', 'steamed', 'puree', 'pieces', 'water', 'whole', 'well', 'cooked', 'boneless', 'mild', 'soaked', 'family', 'meals', 'with', 'less']);
+const foodCore = f => f.toLowerCase().replace(/\(.*?\)/g, '').split(/\s+/).find(w => w.length > 2 && !FOOD_STOP.has(w)) || f.toLowerCase();
+const untriedFoods = (band, triedNames) => (band?.foods || []).filter(f => !triedNames.some(t => t.includes(foodCore(f))));
 const allergenOf = name => { const n = name.toLowerCase(); return ALLERGENS.find(a => a[3].some(w => n.includes(w))); };
 async function foodIntro() {
   if (S.months < 5.5) return `<p class="ok-note">🥄 Solid foods usually start at <b>6 months</b>. Until then, breast milk (or formula) is all ${S.P.he} needs. This tab fills up once you log meals.</p>`;
@@ -2517,9 +2537,7 @@ async function foodIntro() {
   const recent = tried.filter(([, f]) => f.first >= addDays(today, -2)).sort((x, y) => y[1].first.localeCompare(x[1].first))[0];
   const band = FIRST_FOODS.find(b => S.months < b.max);
   const triedNames = tried.map(([n]) => n.toLowerCase());
-  const STOP = new Set(['mashed', 'mash', 'soft', 'steamed', 'puree', 'pieces', 'water', 'whole', 'well', 'cooked', 'boneless', 'mild', 'soaked', 'family', 'meals', 'with', 'less']);
-  const core = f => f.toLowerCase().replace(/\(.*?\)/g, '').split(/\s+/).find(w => w.length > 2 && !STOP.has(w)) || f.toLowerCase();
-  const next = band.foods.filter(f => !triedNames.some(t => t.includes(core(f)))).slice(0, 8);
+  const next = untriedFoods(band, triedNames).slice(0, 8);
   const favs = tried.filter(([, f]) => f.fav);
   const day = recent ? Math.round((parseKey(today) - parseKey(recent[1].first)) / 86400000) + 1 : 0;
   return `
@@ -2602,7 +2620,7 @@ async function renderMom() {
   if (t.metime === false) tips.push('🌿 Take 15 minutes just for yourself today: a bath, a walk, music or a call with a friend.');
   const red = (t.body || []).filter(b => ['Heavy bleeding', 'Fever', 'Headache', 'Feeling dizzy', 'Breast pain or lump'].includes(b));
   const sel = (n, v, opts) => opts.map(([val, lab]) => `<button type="button" class="chip-btn ${t[n] === val ? 'picked' : ''}" data-act="momSet" data-k="${n}" data-v="${val}">${lab}</button>`).join('');
-  main().innerHTML = `${backBar()}<h2>💗 Amma's wellbeing</h2>
+  main().innerHTML = `<button class="back" data-act="view" data-view="home">‹ Home</button><h2>💗 Amma's wellbeing</h2>
     <p class="muted">A one-minute check-in for you. Looking after yourself is looking after the baby too. Saved for the family, not for one child.</p>
     <section class="card mom-card"><div class="label">Today · ${esc(fmtDateLong(today))}</div>
       <p><b>How are you feeling?</b></p><div class="moods">${MOODS.map(([e, l], i) => `<button type="button" class="mood ${t.mood === i ? 'picked' : ''}" data-act="momSet" data-k="mood" data-v="${i}" aria-label="${l}"><span>${e}</span><small>${l}</small></button>`).join('')}</div>

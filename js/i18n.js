@@ -29,7 +29,7 @@ const TA = {
   'Feeding now': 'இப்போது பால் கொடுக்கிறோம்', 'Awake': 'விழித்திருக்கும் நேரம்', 'Learning time': 'கற்றல் நேரம்',
   'Feelings activity': 'உணர்வுச் செயல்பாடு', 'Book, material & rhyme': 'புத்தகம், பொருள், பாடல்', "Today's activity": 'இன்றைய செயல்பாடு',
   'Summary': 'சுருக்கம்', 'Today vs aim': 'இன்று vs இலக்கு', 'Pattern': 'பழக்க முறை', 'Day by day': 'நாள் வாரியாக',
-  'This month': 'இந்த மாதம்', 'Milestones & tips': 'வளர்ச்சிப் படிகள் & குறிப்புகள்',
+  'This month': 'இந்த மாதம்', 'Milestones & month card': 'வளர்ச்சிப் படிகள் & மாத அட்டை',
   'sleep': 'தூக்கம்', 'feeds+meals': 'பால்+சாப்பாடு', 'wet': 'ஈரம்', 'play': 'விளையாட்டு', 'meals': 'சாப்பாடு', 'pee': 'சிறுநீர்',
   'outdoor': 'வெளியே', 'screen': 'திரை', 'study': 'படிப்பு', 'active': 'சுறுசுறுப்பு',
   "Today's full timeline is in": 'இன்றைய முழு நேரவரிசை இங்கே:',
@@ -46,7 +46,8 @@ const TA = {
   'Total sleep': 'மொத்தத் தூக்கம்', 'Naps': 'குட்டித் தூக்கங்கள்', 'Milk feeds': 'பால் கொடுத்தது', 'Meals': 'சாப்பாடுகள்',
   'Month theme': 'மாதக் கருப்பொருள்', 'Working towards': 'அடுத்து கற்றுக்கொள்வது', 'Should be doing now': 'இப்போது செய்ய வேண்டியவை',
   'Body checks': 'உடல் பரிசோதனைகள்', 'New things': 'புதிய விஷயங்கள்', 'Tip of the day': 'இன்றைய குறிப்பு', 'Next in routine': 'அடுத்த வழக்கம்',
-  'Month card': 'மாத அட்டை',
+  'Month card': 'மாத அட்டை', 'New food': 'புதிய உணவு', 'Try something new': 'புதியதை முயற்சிக்கவும்', 'One-minute check-in': 'ஒரு நிமிட சரிபார்ப்பு',
+  'Routine': 'வழக்கம்',
   // diary / timeline
   'in between': 'இடைவெளி', 'carried on': 'தொடர்ந்தது', 'now': 'இப்போது', 'yesterday': 'நேற்று', 'Select to delete': 'நீக்கத் தேர்ந்தெடு',
   'Select all': 'அனைத்தையும் தேர்ந்தெடு', 'selected': 'தேர்ந்தெடுக்கப்பட்டது', 'Add entry to this day': 'இந்த நாளில் பதிவு சேர்',

@@ -681,3 +681,6 @@ html[lang="ta"] .cats .cat { white-space: normal; font-size: .72rem; line-height
 html[lang="ta"] .cats .cat .cl { overflow: visible; text-overflow: clip; }
 html[lang="ta"] nav.tabs button { font-size: .64rem; letter-spacing: 0; }
 html[lang="ta"] .tbtn b, html[lang="ta"] .big2 .ql { font-size: .8rem; }
+/* learning tile glows at learning time */
+.tbtn.now { outline: 2.5px solid var(--c-learn-s); box-shadow: 0 0 0 4px color-mix(in srgb, var(--c-learn-s) 20%, transparent); }
+.tbtn.now small { color: var(--c-learn-s); font-weight: 800; }
