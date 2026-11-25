@@ -22,7 +22,7 @@ const APP_NAME = 'Happy Parenthood';
 // ------------------------------------------------------------------ state
 const S = {
   settings: null, months: 0, stage: null, theme: null, child: 'main', children: [], P: pr('boy'),
-  view: 'home', selMode: false, sel: new Set(), homeTab: 'timeline', homeCat: null, settingsTab: null, diaryDate: dateKey(), growTab: 'milestones', trendDays: 7, guideAll: false,
+  view: 'home', selMode: false, sel: new Set(),  homeCat: null, settingsTab: null, diaryDate: dateKey(), growTab: 'milestones', trendDays: 7, guideAll: false,
   healthTab: 'illness', healthQ: '', voiceItems: null, voiceText: '',
 };
 const $ = sel => document.querySelector(sel);
@@ -134,7 +134,7 @@ async function selectChild(id, render = true) {
   try { localStorage.setItem('hp-child', id); } catch (e) { /* ignore */ }
   const st = await db.getKV('settings');
   S.settings = st ? { ...DEFAULT_SETTINGS, ...st } : null;
-  S.homeCat = null; S.homeTab = 'timeline';
+  S.homeCat = null;
   applyTheme();
   if (S.settings?.dob) await refreshAge();
   if (render) { S.view = 'home'; route(); }
@@ -336,17 +336,6 @@ async function renderHome() {
   const btns = quickForAge().filter(q => (CAT[q.k] || 'feel') === S.homeCat);
   const otherRunning = running.filter(e => (CAT[e.type] || 'feel') !== S.homeCat);
 
-  let tabBody = '';
-  const todayN = list.filter(e => e.date === today && e.type !== 'ei').length;
-  if (S.homeFilter && !GLANCE_TYPES[S.homeFilter]) S.homeFilter = null;
-  if (!['timeline', 'summary', 'month'].includes(S.homeTab)) S.homeTab = 'timeline'; // the old "Today's log" tab is now part of the timeline
-  if (S.homeFilter && GLANCE_TYPES[S.homeFilter]) {
-    const fl = glanceList(list, today, S.homeFilter);
-    tabBody = glanceHeader(S.homeFilter, sm, fl.length) + (fl.length ? timelineHtml(fl, today) : '<p class="empty">Nothing of this kind logged yet today.</p>');
-  } else if (S.homeTab === 'timeline') tabBody = selBar(todayN) + timelineHtml(list, today);
-  else if (S.homeTab === 'summary') tabBody = homeSummary(sm, S.stage.targets);
-  else tabBody = await homeMonth(list, today);
-
   main().innerHTML = `
     ${banner}
     ${await installNudge()}
@@ -363,10 +352,8 @@ async function renderHome() {
     ${otherRunning.map(e => `<div class="run-pill c-${CAT[e.type] || 'feel'}"><span>${typeInfo(e.type).icon} <b>${esc(typeInfo(e.type).label)}</b> <span data-since="${e.start}">${fmtDur(entryMinutes(e))}</span></span>
       <button class="pill-btn" data-act="toggle" data-type="${e.type}">Stop</button></div>`).join('')}
     <section class="glance" aria-label="Today at a glance">${glanceForAge(sm)}</section>
-    <div class="seg" role="tablist">
-      ${[['timeline', "Today's timeline"], ['summary', 'Summary'], ['month', 'This month']].map(([k, l]) => `<button role="tab" data-act="homeTab" data-tab="${k}" aria-pressed="${!S.homeFilter && S.homeTab === k}">${l}</button>`).join('')}
-    </div>
-    <div class="tab-body">${tabBody}</div>`;
+    ${homeMoreButtons()}
+    <p class="muted small center">Today's full timeline is in <button class="linkish" data-act="view" data-view="diary">📒 Diary</button>.</p>`;
 }
 
 function quickBtn(q, running, sm) {
@@ -391,7 +378,7 @@ const GLANCE_TYPES = {
   wet: ['pee', 'poop', 'potty'], play: ['play', 'floor', 'walk', 'exercise', 'hobby'], outdoor: ['walk', 'exercise', 'play'],
   screen: ['screen'], study: ['study', 'reading', 'homework'],
 };
-const glance = (icon, v, l, f) => `<button class="g ${S.homeFilter === f ? 'on' : ''}" data-act="glanceFilter" data-f="${f}" aria-pressed="${S.homeFilter === f}"><span>${icon}</span><b>${esc(v)}</b><small>${l}</small></button>`;
+const glance = (icon, v, l, f) => `<button class="g" data-act="glanceFilter" data-f="${f}"><span>${icon}</span><b>${esc(v)}</b><small>${l}</small></button>`;
 function glanceList(list, today, f) {
   return list.filter(e => GLANCE_TYPES[f].includes(e.type) && (e.date === today || (e.type === 'sleep' && e.end && dateKey(e.end) === today)))
     .filter(e => f !== 'outdoor' || e.type !== 'play' || e.data?.where === 'Outdoor');
@@ -427,48 +414,6 @@ function homeSummary(sm, tg) {
   </section>`;
 }
 
-async function homeMonth(list, today) {
-  const st = S.stage;
-  const state = await db.getKV('milestones', {});
-  const { passed, next } = milestoneFocus(S.months);
-  const tip = pickDaily(DAILY_TIPS.filter(t => S.months >= t.min && S.months < t.max), 1).text;
-  const ei = pickDaily(st.ei.activities, 0);
-  const eiDone = list.some(e => e.type === 'ei' && e.date === today && e.data?.text === ei);
-  const monthStart = today.slice(0, 8) + '01';
-  const news = (await db.range(monthStart, today)).filter(e => e.type === 'memory').sort((a, b) => b.start - a.start);
-  const routine = await getRoutine();
-  const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
-  const nx = routine.find(r => r.min >= nowMin - 10) || routine[0];
-  const msList = (c, title, cls, limit) => {
-    if (!c) return '';
-    const todo = c.items.map((it, i) => ({ it, i, k: `${c.at}:${i}` })).filter(x => !state[x.k]);
-    const done = c.items.length - todo.length;
-    return `<section class="card ms-focus ${cls}"><div class="row between"><div class="label">${title}</div><span class="badge ${done === c.items.length ? 'ok' : ''}">${done}/${c.items.length} ✓</span></div>
-      ${todo.length ? (() => {
-        const shown = todo.slice(0, limit), seen = new Set();
-        return `<ul class="checklist">${shown.map(x => {
-          const cat = x.it[0], tipText = !seen.has(cat) && MILESTONE_TIPS[c.at]?.[cat];
-          seen.add(cat);
-          return `<li><label class="check"><input type="checkbox" data-ms="${x.k}"> <span>${esc(x.it[1])}${tipText ? `<br><small class="tip-inline">💡 ${esc(tipText)}</small>` : ''}</span></label></li>`;
-        }).join('')}</ul>${todo.length > limit ? `<button class="btn small" data-act="goGrow" data-tab="milestones">See all ${todo.length}</button>` : ''}`;
-      })() : '<p>🎉 All done! Great going.</p>'}</section>`;
-  };
-  const th = S.theme;
-  const phys = S.months <= 12.5 ? MONTHLY_PHYSICAL.find(r => r.m === Math.min(12, Math.max(1, Math.floor(S.months)))) : null;
-  const physState = await db.getKV('physical', {});
-  return `
-    <section class="card theme-card"><div class="theme-now"><span class="big-emoji">${th.emoji}</span><div><b>${esc(th.label)}: ${esc(th.name)}</b><br><small>${esc(th.about)}</small></div></div>
-      ${phys ? `<div class="row between"><span class="small"><b>Body checks for month ${phys.m}:</b> ${phys.items.filter((_, i) => physState[`${phys.m}:${i}`]).length}/${phys.items.length} done</span><button class="btn small" data-act="goGrow" data-tab="physical">Open</button></div>` : ''}</section>
-    ${msList(next, `🎯 Working towards · by ${ageLabel(next?.at)}`, 'next', 5)}
-    ${passed && passed !== next ? msList(passed, `✅ Should be doing now · by ${ageLabel(passed.at)}`, 'passed', 4) : ''}
-    <p class="muted small">Tick a milestone when you see ${S.P.him} do it. Every child grows at their own pace — if something in "should be doing now" isn't happening, mention it at the next paediatric visit.</p>
-    <section class="card"><div class="row between"><div class="label">✨ New things this month (${news.length})</div><button class="btn small" data-act="form" data-type="memory" data-first="1">＋ Add</button></div>
-      ${news.length ? `<ul class="mini-list">${news.slice(0, 4).map(e => `<li data-act="edit" data-id="${e.id}"><b>${esc(fmtDateShort(e.date))}</b> ${esc(e.data?.text || e.note)}</li>`).join('')}</ul>` : '<p class="muted small">Clapped? Said a new word? Stood up? Tap ✨ New today on the home screen.</p>'}</section>
-    <section class="card ei"><div class="label">💛 Today's feelings activity</div><p>${esc(ei)}</p>
-      <button class="btn ${eiDone ? '' : 'primary'} small" data-act="eidone" data-text="${esc(ei)}" ${eiDone ? 'disabled' : ''}>${eiDone ? '✓ Done today' : 'We did it'}</button></section>
-    <section class="card tip"><div class="label">🌱 Tip of the day</div><p>${esc(tip)}</p></section>
-    <section class="card"><div class="row between"><div><div class="label">🕒 Next in routine</div><b>${minToHm(nx.min)}</b> · ${esc(nx.label)}</div><button class="btn small" data-act="view" data-view="routine">Timetable</button></div></section>`;
-}
 const ageLabel = at => at == null ? '' : at < 24 ? `${at} months` : `${at / 12} years`;
 
 function tile(icon, label, value, target, status, sub = '') {
@@ -2352,6 +2297,153 @@ async function alarmCard() {
     <div class="row wrap"><button class="btn primary" data-act="alarmTest">🔔 Test alarm</button>${bellUrl() && !closed ? '<button class="btn" data-act="alarmsOn">🔔 Turn on alarms</button>' : ''}<button class="btn" data-act="alarmsOff">Turn off</button></div></section>`;
 }
 
+// ------------------------------------------------------------------ HOME: summary / pattern / this month (open only when tapped)
+function homeMoreButtons() {
+  return `<section class="home-more" aria-label="More about today">
+    <button class="hm-btn" data-act="homeSheet" data-k="summary"><span>📊</span><b>Today's summary</b><small>vs the aim for ${S.P.his} age</small></button>
+    <button class="hm-btn" data-act="homeSheet" data-k="pattern"><span>🗓️</span><b>Daily pattern</b><small>how ${S.P.his} days are changing</small></button>
+    <button class="hm-btn" data-act="homeSheet" data-k="month"><span>${S.theme.emoji}</span><b>This month</b><small>milestones, new things, tips</small></button>
+  </section>`;
+}
+async function openHomeSheet(k) {
+  const today = dateKey();
+  if (k === 'summary') {
+    const sm = summarize(await entriesAround(today), today);
+    return openSheet(`<div class="sheet-hd"><h3>📊 Today's summary</h3><button class="icon-btn" data-act="close" aria-label="Close">✕</button></div>${homeSummary(sm, S.stage.targets)}`, { focus: false });
+  }
+  if (k === 'pattern') return openPattern(S.patternDays || 7);
+  if (k === 'month') return openMonth();
+}
+// Tapping a glance number: just those entries of today, as a timeline, in a pop-up
+async function openGlance(f) {
+  const today = dateKey(), list = await entriesAround(today), sm = summarize(list, today), fl = glanceList(list, today, f);
+  openSheet(`<div class="sheet-hd"><h3>Today</h3><button class="icon-btn" data-act="close" aria-label="Close">✕</button></div>
+    ${glanceHeader(f, sm, fl.length).replace(/<button[^>]*>✕ Show all<\/button>/, '')}
+    ${fl.length ? timelineHtml(fl, today) : '<p class="empty">Nothing of this kind logged yet today.</p>'}`, { focus: false });
+}
+
+// ---- This month: one screen of tiles; tap a tile to open it
+async function monthSections() {
+  const today = dateKey(), st = S.stage;
+  const state = await db.getKV('milestones', {});
+  const { passed, next } = milestoneFocus(S.months);
+  const tip = pickDaily(DAILY_TIPS.filter(t => S.months >= t.min && S.months < t.max), 1).text;
+  const ei = pickDaily(st.ei.activities, 0);
+  const eiDone = (await db.byDate(today)).some(e => e.type === 'ei' && e.data?.text === ei);
+  const news = (await db.range(today.slice(0, 8) + '01', today)).filter(e => e.type === 'memory').sort((a, b) => b.start - a.start);
+  const routine = await getRoutine();
+  const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+  const nx = routine.find(r => r.min >= nowMin - 10) || routine[0];
+  const th = S.theme;
+  const phys = S.months <= 12.5 ? MONTHLY_PHYSICAL.find(r => r.m === Math.min(12, Math.max(1, Math.floor(S.months)))) : null;
+  const physState = await db.getKV('physical', {});
+  const msCount = c => { const done = c.items.filter((_, i) => state[`${c.at}:${i}`]).length; return [done, c.items.length]; };
+  const msHtml = (c) => {
+    const seen = new Set();
+    return `<ul class="checklist">${c.items.map((it, i) => ({ it, k: `${c.at}:${i}` })).map(x => {
+      const cat = x.it[0], tipText = !seen.has(cat) && MILESTONE_TIPS[c.at]?.[cat];
+      seen.add(cat);
+      return `<li><label class="check"><input type="checkbox" data-ms="${x.k}" ${state[x.k] ? 'checked' : ''}> <span>${esc(x.it[1])}${tipText ? `<br><small class="tip-inline">💡 ${esc(tipText)}</small>` : ''}</span></label></li>`;
+    }).join('')}</ul>
+    <p class="muted small">Tick it when you see ${S.P.him} do it. Every child grows at their own pace — if something isn't happening, mention it at the next paediatric visit.</p>`;
+  };
+  const out = [];
+  out.push({ k: 'theme', icon: th.emoji, title: 'Month theme', sub: th.name, html: `<div class="theme-now"><span class="big-emoji">${th.emoji}</span><div><b>${esc(th.label)}: ${esc(th.name)}</b><br><small>${esc(th.about)}</small></div></div>` });
+  if (next) { const [d, n] = msCount(next); out.push({ k: 'next', icon: '🎯', title: 'Working towards', sub: `${d}/${n} · by ${ageLabel(next.at)}`, html: msHtml(next) }); }
+  if (passed && passed !== next) { const [d, n] = msCount(passed); out.push({ k: 'passed', icon: '✅', title: 'Should be doing now', sub: `${d}/${n} · by ${ageLabel(passed.at)}`, warn: d < n, html: msHtml(passed) }); }
+  if (phys) { const d = phys.items.filter((_, i) => physState[`${phys.m}:${i}`]).length;
+    out.push({ k: 'phys', icon: '📏', title: 'Body checks', sub: `${d}/${phys.items.length} for month ${phys.m}`, html: `<p>${d} of ${phys.items.length} checks for month ${phys.m} done.</p><button class="btn primary" data-act="goGrow" data-tab="physical">Open body checks & growth chart</button>` }); }
+  out.push({ k: 'news', icon: '✨', title: 'New things', sub: `${news.length} this month`, html: `${news.length ? `<ul class="mini-list">${news.map(e => `<li data-act="edit" data-id="${e.id}"><b>${esc(fmtDateShort(e.date))}</b> ${esc(e.data?.text || e.note)}</li>`).join('')}</ul>` : '<p class="muted small">Clapped? Said a new word? Stood up? Add it here.</p>'}
+    <button class="btn primary" data-act="form" data-type="memory" data-first="1">＋ Add a new thing</button>` });
+  out.push({ k: 'ei', icon: '💛', title: 'Feelings activity', sub: eiDone ? '✓ done today' : 'for today', html: `<p>${esc(ei)}</p><button class="btn ${eiDone ? '' : 'primary'}" data-act="eidone" data-text="${esc(ei)}" ${eiDone ? 'disabled' : ''}>${eiDone ? '✓ Done today' : 'We did it'}</button>` });
+  out.push({ k: 'tip', icon: '🌱', title: 'Tip of the day', sub: tip.length > 34 ? tip.slice(0, 32) + '…' : tip, html: `<p>${esc(tip)}</p>` });
+  out.push({ k: 'routine', icon: '🕒', title: 'Next in routine', sub: `${minToHm(nx.min)} · ${nx.label}`, html: `<p><b>${minToHm(nx.min)}</b> · ${esc(nx.label)}</p><button class="btn primary" data-act="view" data-view="routine">Open the timetable</button>` });
+  return out;
+}
+async function openMonth(k = null) {
+  const secs = await monthSections();
+  const sec = k && secs.find(x => x.k === k);
+  if (sec) return openSheet(`<div class="sheet-hd"><button class="back" data-act="monthTile" data-k="">‹ This month</button><button class="icon-btn" data-act="close" aria-label="Close">✕</button></div>
+    <h3>${sec.icon} ${esc(sec.title)}</h3>${sec.html}`, { focus: false });
+  openSheet(`<div class="sheet-hd"><h3>${S.theme.emoji} This month · ${esc(ageText(S.settings.dob))}</h3><button class="icon-btn" data-act="close" aria-label="Close">✕</button></div>
+    <section class="month-grid">${secs.map(x => `<button class="mt ${x.warn ? 'warn' : ''}" data-act="monthTile" data-k="${x.k}"><span>${x.icon}</span><b>${esc(x.title)}</b><small>${esc(x.sub)}</small></button>`).join('')}</section>`, { focus: false });
+}
+
+// ---- Daily pattern: one row per day, 24 hours across, coloured by what was happening
+const PATTERN_KINDS = [
+  ['sleep', 'Sleep', ['sleep', 'nap'], 'var(--c-sleep-s)'], ['feed', 'Milk', ['breastfeed', 'bottle'], 'var(--c-food-s)'],
+  ['meal', 'Meals', ['meal'], '#b4582a'], ['play', 'Play & outdoors', ['play', 'floor', 'walk', 'exercise', 'hobby'], 'var(--c-play-s)'],
+  ['care', 'Bath & massage', ['bath', 'massage'], 'var(--c-care-s)'], ['learn', 'Learning', ['study', 'reading', 'homework'], 'var(--c-learn-s)'],
+  ['screen', 'Screen', ['screen'], 'var(--c-feel-s)'], ['toilet', 'Pee / poop', ['pee', 'poop', 'potty'], 'var(--c-toilet-s)'],
+];
+const kindOf = type => PATTERN_KINDS.find(k => k[2].includes(type));
+async function patternData(days) {
+  const today = dateKey(), first = addDays(today, -13);
+  const all = (await db.range(addDays(first, -1), today)).filter(e => kindOf(e.type));
+  const dayKeys = [...Array(14)].map((_, i) => addDays(first, i));
+  const info = d => {
+    const s0 = parseKey(d).getTime(), s1 = s0 + 86400000, sm = summarize(all, d);
+    const night = all.filter(e => e.type === 'sleep');
+    const wakeE = night.filter(e => e.end && e.end >= s0 + 3 * 3600000 && e.end < s0 + 12 * 3600000).sort((a, b) => a.end - b.end)[0];
+    const bedE = night.filter(e => e.start >= s0 + 17 * 3600000 && e.start < s1).sort((a, b) => a.start - b.start)[0];
+    return { d, s0, s1, sleepMin: sm.sleepMin, naps: sm.napCount, feeds: sm.feeds, meals: sm.meals,
+      wake: wakeE ? (wakeE.end - s0) / 60000 : null, bed: bedE ? (bedE.start - s0) / 60000 : null,
+      logged: all.filter(e => e.date === d).length >= 3 }; // a day counts once a few things were logged
+  };
+  return { all, rows: dayKeys.map(info), shown: days };
+}
+function patternSvg(all, rows) {
+  const L = 44, W = 340, CW = W - L - 4, RH = 18, GAP = 5, top = 16, H = top + rows.length * (RH + GAP) + 4;
+  const x = min => L + (min / 1440) * CW;
+  let g = '';
+  for (const h of [0, 3, 6, 9, 12, 15, 18, 21, 24]) g += `<line x1="${x(h * 60)}" x2="${x(h * 60)}" y1="${top - 2}" y2="${H - 2}" class="pg-grid"/>${h % 6 === 0 ? `<text x="${x(h * 60)}" y="10" class="pg-hr">${h === 24 ? '24' : String(h).padStart(2, '0')}</text>` : ''}`;
+  rows.forEach((r, i) => {
+    const y = top + i * (RH + GAP), wd = parseKey(r.d);
+    g += `<text x="0" y="${y + 12}" class="pg-day">${wd.toLocaleDateString(undefined, { weekday: 'short' })} ${wd.getDate()}</text>`;
+    g += `<rect x="${L}" y="${y}" width="${CW}" height="${RH}" rx="4" class="pg-bg"/>`;
+    for (const e of all) {
+      const k = kindOf(e.type), timed = typeInfo(e.type).timed && e.end !== e.start;
+      if (timed) {
+        const a = Math.max(e.start, r.s0), b = Math.min(e.end ?? Date.now(), r.s1);
+        if (b <= a) continue;
+        const small = k[0] !== 'sleep';
+        g += `<rect x="${x((a - r.s0) / 60000)}" y="${y + (small ? 4 : 0)}" width="${Math.max(1.5, x((b - r.s0) / 60000) - x((a - r.s0) / 60000))}" height="${small ? RH - 8 : RH}" rx="2" fill="${k[3]}"><title>${esc(typeInfo(e.type).label)} ${fmtTime(e.start)}${e.end ? '–' + fmtTime(e.end) : ' (now)'}</title></rect>`;
+      } else if (e.start >= r.s0 && e.start < r.s1) {
+        const cx = x((e.start - r.s0) / 60000);
+        g += k[0] === 'toilet' ? `<circle cx="${cx}" cy="${y + RH - 2.5}" r="2" fill="${k[3]}"/>` : `<rect x="${cx - 1.5}" y="${y + 3}" width="3" height="${RH - 6}" rx="1" fill="${k[3]}"/>`;
+      }
+    }
+  });
+  return `<svg viewBox="0 0 ${W} ${H}" class="pattern-svg" role="img" aria-label="Daily pattern chart">${g}</svg>`;
+}
+async function openPattern(days = 7) {
+  S.patternDays = days;
+  const { all, rows } = await patternData(days);
+  const shown = rows.slice(-days);
+  const avg = (list, f) => { const v = list.map(f).filter(n => n != null && !Number.isNaN(n)); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
+  const thisW = rows.slice(-7).filter(r => r.logged), lastW = rows.slice(0, 7).filter(r => r.logged);
+  const line = (icon, label, f, fmt, goodUp = null) => {
+    const a = avg(thisW, f), b = avg(lastW, f);
+    if (a == null) return '';
+    const diff = b == null ? 0 : a - b;
+    const arrow = b == null || Math.abs(diff) < (fmt === 'time' ? 10 : fmt === 'dur' ? 15 : 0.3) ? '' : diff > 0 ? '▲' : '▼';
+    const show = v => fmt === 'time' ? minToHm(v) : fmt === 'dur' ? fmtDur(v) : v.toFixed(1);
+    return `<tr><td>${icon} ${label}</td><td><b>${show(a)}</b> <span class="muted">${arrow}</span></td><td class="muted">${b == null ? '—' : show(b)}</td></tr>`;
+  };
+  const legendKinds = PATTERN_KINDS.filter(k => all.some(e => k[2].includes(e.type)));
+  openSheet(`<div class="sheet-hd"><h3>🗓️ Daily pattern</h3><button class="icon-btn" data-act="close" aria-label="Close">✕</button></div>
+    <div class="seg small">${[7, 14].map(n => `<button data-act="patternDays" data-days="${n}" aria-pressed="${n === days}">${n} days</button>`).join('')}</div>
+    ${all.length ? `${patternSvg(all, shown)}
+    <div class="pg-legend">${legendKinds.map(k => `<span><i style="background:${k[3]}"></i>${k[1]}</span>`).join('')}</div>
+    <table class="meds pattern-table"><thead><tr><th>Average</th><th>This week</th><th>Last week</th></tr></thead><tbody>
+      ${line('🌅', 'Wakes up', r => r.wake, 'time')}${line('🌙', 'Bedtime', r => r.bed, 'time')}
+      ${line('😴', 'Total sleep', r => r.sleepMin, 'dur')}${S.stage.targets.naps[1] ? line('💤', 'Naps', r => r.naps, 'n') : ''}
+      ${S.months < 24 ? line('🍼', 'Milk feeds', r => r.feeds, 'n') : ''}${S.months >= 5 ? line('🥣', 'Meals', r => r.meals, 'n') : ''}
+    </tbody></table>
+    <p class="muted small">Each row is one day, midnight to midnight. Tall purple blocks are sleep; thin bars are feeds, meals and play; dots are pee / poop. Days with nothing logged are left out of the averages. A steady pattern (similar wake-up, naps and bedtime each day) usually means good sleep habits.</p>`
+    : '<p class="empty">Log sleep, feeds and play for a few days and the pattern appears here.</p>'}`, { focus: false });
+}
+
 // ------------------------------------------------------------------ events
 let busy = false;
 async function onClick(ev) {
@@ -2457,14 +2549,10 @@ async function handleClick(el, a, ev) {
       route(); break;
     }
     case 'driveSignOut': if (confirm('Sign out of Google Drive backup on this phone? Your data stays on the phone and in Drive.')) { await driveSignOut(); setBackends({ drive: false }); route(); } break;
-    case 'homeTab': S.homeTab = el.dataset.tab; S.homeFilter = null; route(); break;
-    case 'glanceFilter': {
-      S.homeFilter = S.homeFilter === el.dataset.f ? null : el.dataset.f;
-      if (S.homeFilter) S.homeTab = 'timeline';
-      await route();
-      if (S.homeFilter) main().querySelector('.filter-bar')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      break;
-    }
+    case 'glanceFilter': openGlance(el.dataset.f); break;
+    case 'homeSheet': openHomeSheet(el.dataset.k); break;
+    case 'monthTile': openMonth(el.dataset.k || null); break;
+    case 'patternDays': openPattern(Number(el.dataset.days)); break;
     case 'selStart': S.selMode = true; S.sel.clear(); route(); break;
     case 'selCancel': S.selMode = false; S.sel.clear(); route(); break;
     case 'selAll': {

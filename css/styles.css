@@ -561,3 +561,31 @@ body.locked .toast { top: calc(10px + env(safe-area-inset-top)); bottom: auto; }
 .add-rem { display: grid; grid-template-columns: 104px 1fr; gap: 8px; }
 .add-rem .btn { grid-column: 1 / -1; }
 .add-rem input { min-width: 0; }
+
+/* ---------- categories in rows (no sideways scrolling) ---------- */
+.cats { flex-wrap: wrap; overflow: visible; margin: 4px 0 10px; padding: 0; }
+.cats .cat { padding: 8px 12px; }
+
+/* ---------- Home: summary / pattern / this month open in a pop-up ---------- */
+.home-more { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 14px 0 6px; }
+.hm-btn { appearance: none; border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 16px; padding: 12px 6px; font: inherit; cursor: pointer; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 2px; min-width: 0; box-shadow: var(--shadow); }
+.hm-btn span { font-size: 1.6rem; line-height: 1.1; }
+.hm-btn b { font-size: .84rem; line-height: 1.15; }
+.hm-btn small { color: var(--text-2); font-size: .68rem; line-height: 1.2; }
+.center { text-align: center; }
+.linkish { appearance: none; border: none; background: none; color: var(--accent); font: inherit; font-weight: 800; padding: 0; cursor: pointer; }
+.month-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 6px 0; }
+.mt { appearance: none; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); border-radius: 16px; padding: 12px; font: inherit; text-align: left; cursor: pointer; display: grid; grid-template-columns: auto 1fr; column-gap: 8px; align-items: center; min-width: 0; }
+.mt span { grid-row: span 2; font-size: 1.5rem; }
+.mt b { font-size: .88rem; }
+.mt small { color: var(--text-2); font-size: .74rem; overflow-wrap: anywhere; }
+.mt.warn small { color: var(--low); font-weight: 700; }
+.sheet .back { margin: 0; }
+.pattern-svg { width: 100%; height: auto; display: block; margin: 8px 0 4px; }
+.pattern-svg .pg-grid { stroke: var(--grid); stroke-width: 1; }
+.pattern-svg .pg-hr { font-size: 8px; fill: var(--muted); text-anchor: middle; font-weight: 700; }
+.pattern-svg .pg-day { font-size: 9px; fill: var(--text-2); font-weight: 700; }
+.pattern-svg .pg-bg { fill: var(--surface-2); }
+.pg-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: .76rem; color: var(--text-2); margin: 4px 0 10px; }
+.pg-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
+.pattern-table td:first-child { white-space: nowrap; }
