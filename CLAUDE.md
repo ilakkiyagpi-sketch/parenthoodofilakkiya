@@ -32,6 +32,7 @@ A personal, offline-first parenting PWA built for one family (Amma/Appa) in Tami
 ## Decisions the user made (keep them)
 - App name **Happy Parenthood**. Professional but kid-friendly look (Nunito font, pastel activity colours).
 - Home = **design C**: category chips **wrapped in rows** (no sideways scroll; age-ordered; the category of the next routine item opens first) → big one-tap buttons (tap to start a timer, tap again to stop) → "last feed" strip → 4 glance numbers (tap one → pop-up of only those entries today) → three buttons **📊 Today's summary / 🗓️ Daily pattern / This month** that open pop-ups **only when tapped**. **No timeline on Home** (it lives in Diary). This month = one screen of tiles; tap a tile to open it. Daily pattern = 24-hour chart, one row per day (7/14 days) + this week vs last week averages. No floating ＋ (it covered buttons).
+- Home look is **uniform**: every block is a row card (`.rcard`, white rounded icon box `.ib` on the left) or a tile (`.tbtn`, icon box on top); same 18px corners and 8–10px gaps; categories in an even 3-column grid. Keep new Home items in these two shapes.
 - **Never jump to the top of the page** after a tap or tick (`route()` keeps scroll on the same screen; milestone and physical ticks update in place).
 - Age theme fills the **whole background** and changes every month until 12 months, then per stage.
 - Breastfeed asks **Left / Right / Both** on start (suggests the opposite side) and offers "switch side" while running.
