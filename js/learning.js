@@ -21,13 +21,16 @@ export const LEARNING = [
       'Tummy time on your chest: talk to him as he lifts his head.'],
     types: ['High-contrast black, white and red pictures', 'Talking and singing (he loves your voice most)', 'Soft cloth or crinkle book to touch', 'Face-to-face "conversation"'],
     books: [['Look, Look!', 'Peter Linenthal', 'bold black-and-white faces'], ['Black & White', 'Tana Hoban', 'high-contrast pictures'],
-      ['Hello, Animals!', 'Smriti Prasadam-Halls', 'high-contrast board book'], ['Global Babies', 'The Global Fund for Children', 'photos of baby faces from around the world']],
+      ['Hello, Animals!', 'Smriti Prasadam-Halls', 'high-contrast board book'], ['Global Babies', 'The Global Fund for Children', 'photos of baby faces from around the world'],
+      ['Read to Your Baby Every Day', 'Rachel Williams', 'mirror pages and rhymes'], ['Baby Touch and Feel: Cuddly Animals', 'DK', 'soft textures to touch']],
     materials: ['High-contrast cards (draw thick black shapes on white card)', 'Unbreakable baby mirror for tummy time', 'Rattle to follow with his eyes', 'Soft crinkle book'],
-    rhymes: ['Nila Nila Odi Vaa', 'Chinna Chinna Kannukku', 'Twinkle Twinkle Little Star', 'Rock-a-bye Baby'],
+    rhymes: ['Nila Nila Odi Vaa', 'Saaindhaadamma Saaindhaadu (lullaby)', 'Thalelo Thalelo (thalattu)', 'Twinkle Twinkle Little Star', 'Rock-a-bye Baby'],
   },
   {
     max: 12,
     morning: ['5 minutes of "point and name": carry him round the house and name 5 things he looks at.',
+      'Serve and return: when he babbles "ba-ba", say it back, smile and wait for his reply. Keep the "chat" going for a few turns.',
+      'Hold a mirror together: point to his nose, eyes and mouth and name them, then yours.',
       'One short board book while he sits on your lap. Let him turn (and chew!) the pages.',
       'Peek-a-boo with a cloth for a few minutes, then say "Where is {name}? There he is!"',
       'Sing one action rhyme (Kai Veesamma) and pause so he can do the action.'],
@@ -36,9 +39,12 @@ export const LEARNING = [
       ['Brown Bear, Brown Bear, What Do You See?', 'Bill Martin Jr. & Eric Carle', 'colours and animals, repeating words'],
       ["That's Not My Puppy", 'Fiona Watt (Usborne)', 'touch-and-feel textures'], ['Peek-a-Who?', 'Nina Laden', 'peek-a-boo with rhymes'],
       ['Moo, Baa, La La La!', 'Sandra Boynton', 'animal sounds'], ['Goodnight Moon', 'Margaret Wise Brown', 'calm bedtime words'],
-      ['Tulika board books (Tamil / English)', 'Tulika Books', 'Indian pictures and words']],
+      ['Tulika board books (Tamil / English)', 'Tulika Books', 'Indian pictures and words'],
+      ['Pat the Bunny', 'Dorothy Kunhardt', 'touch, smell and do'], ['More, More, More, Said the Baby', 'Vera B. Williams', 'love and play, three little stories'],
+      ['Read to Your Baby Every Day', 'Rachel Williams', 'mirror pages and rhymes'], ['Baby Touch and Feel: Cuddly Animals', 'DK', 'soft textures to touch'],
+      ['What\'s That Noise?', 'Pratham Books (StoryWeaver, also in Tamil)', 'sounds around us — free to read']],
     materials: ['Picture cards of fruits and animals', 'Stacking cups', 'Soft ball to roll back and forth', 'Shape sorter (show, don\'t test)', 'Steel bowls and a spoon to bang (music!)', 'Cloth for peek-a-boo'],
-    rhymes: ['Kai Veesamma Kai Veesu', 'Aana Aana Azhagar Aana', 'Nila Nila Odi Vaa', 'Wheels on the Bus', 'Pat-a-cake', 'Head, Shoulders, Knees and Toes'],
+    rhymes: ['Kai Veesamma Kai Veesu', 'Aana Aana Azhagar Aana', 'Nila Nila Odi Vaa', 'Kaakka Kaakka Kannukku Mai Kondu Vaa', 'Chinna Chinna Paravai', 'Wheels on the Bus', 'Pat-a-cake', 'Head, Shoulders, Knees and Toes'],
   },
   {
     max: 24,
@@ -84,4 +90,16 @@ export const LEARNING = [
     rhymes: ['Thirukkural of the day', 'Bharathiyar\'s children\'s poems (Odi Vilayaadu Paappa)', 'A poem to learn by heart'],
   },
 ];
+// Where the lists come from, and where to find more (opened in the browser).
+export const LINKS = {
+  storyweaver: 'https://storyweaver.org.in/',
+  tamilRhymes: 'https://tamiltoddlers.github.io/tt-pages/tamil-rhymes/',
+  nemours: 'https://nemours.org/reading-brightstart/recommended-books/6-to-11-months.html',
+  booktrust: 'https://www.booktrust.org.uk/booklists/b/best-books-for-babies-0-12-months/',
+  serveReturn: 'https://developingchild.harvard.edu/resources/5-steps-for-brain-building-serve-and-return',
+};
+export const SERVE_RETURN = 'Notice what your baby looks at, points to or babbles about (the "serve"). Look, smile and name it ("Yes, a bird!") — the "return". Then wait 2–3 seconds for the next turn. Phone down, and follow the baby\'s lead.';
+export const findBook = b => `https://www.google.com/search?tbm=bks&q=${encodeURIComponent(`${b[0]} ${b[1]}`)}`;
+export const playRhyme = r => `https://www.youtube.com/results?search_query=${encodeURIComponent(`${r} rhyme for kids`)}`;
+
 export const learningFor = months => LEARNING.find(l => months < l.max) || LEARNING[LEARNING.length - 1];

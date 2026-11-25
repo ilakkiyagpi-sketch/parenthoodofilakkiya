@@ -8,7 +8,7 @@ import { INDICATORS, whoValue, zScore, percentile, zLabel } from './growth.js';
 import { applyPronouns, pr } from './pronouns.js';
 import { answer as askAnswer, suggestions as askSuggestions, TOPICS as ASK_TOPICS, questionsFor } from './assistant.js';
 import { GUIDE, DAILY_TIPS } from './guide.js';
-import { learningFor, wakeWindowFor } from './learning.js';
+import { learningFor, wakeWindowFor, LINKS, SERVE_RETURN, findBook, playRhyme } from './learning.js';
 import { BELL_URL } from './config.js';
 import { esc, uid, dateKey, parseKey, addDays, fmtTime, toLocalInput, fromLocalInput, fmtDur, fmtDateLong, fmtDateShort,
   hmToMin, minToHm, ageMonths, ageText, dayOfYear, entryMinutes } from './util.js';
@@ -338,8 +338,12 @@ async function renderHome() {
 
   let tabBody = '';
   const todayN = list.filter(e => e.date === today && e.type !== 'ei').length;
+  if (S.homeFilter && !GLANCE_TYPES[S.homeFilter]) S.homeFilter = null;
   if (S.homeTab === 'timeline') tabBody = selBar(todayN) + timelineHtml(list, today);
-  else if (S.homeTab === 'log') tabBody = selBar(todayN) + entryList(list.filter(e => e.date === today).reverse(), 'Nothing logged yet today. Pick a category above and tap a button, or say it with 🎤.');
+  if (S.homeFilter && GLANCE_TYPES[S.homeFilter]) {
+    const fl = glanceList(list, today, S.homeFilter);
+    tabBody = glanceHeader(S.homeFilter, sm, fl.length) + entryList([...fl].reverse(), 'Nothing of this kind logged yet today.');
+  } else if (S.homeTab === 'log') tabBody = selBar(todayN) + entryList(list.filter(e => e.date === today).reverse(), 'Nothing logged yet today. Pick a category above and tap a button, or say it with 🎤.');
   else if (S.homeTab === 'summary') tabBody = homeSummary(sm, S.stage.targets);
   else tabBody = await homeMonth(list, today);
 
@@ -350,7 +354,7 @@ async function renderHome() {
     ${await weekBanner()}
     ${await lastFeedStrip()}
     ${await wakeStrip()}
-    ${await learningCard()}
+    ${(await learningCard()) || todayStrip()}
     <div class="cats" role="tablist" aria-label="Categories">
       ${cats.map(c => { const n = running.filter(e => (CAT[e.type] || 'feel') === c.k).length; return `<button class="cat c-${c.k}" role="tab" data-act="homeCat" data-cat="${c.k}" aria-selected="${c.k === S.homeCat}">${c.icon} ${c.label}${n ? ' <i class="dot" aria-label="timer running"></i>' : ''}</button>`; }).join('')}
       <button class="cat all" data-act="openPicker">＋ All</button>
@@ -360,7 +364,7 @@ async function renderHome() {
       <button class="pill-btn" data-act="toggle" data-type="${e.type}">Stop</button></div>`).join('')}
     <section class="glance" aria-label="Today at a glance">${glanceForAge(sm)}</section>
     <div class="seg" role="tablist">
-      ${[['timeline', 'Timeline'], ['log', "Today's log"], ['summary', 'Summary'], ['month', 'This month']].map(([k, l]) => `<button role="tab" data-act="homeTab" data-tab="${k}" aria-pressed="${S.homeTab === k}">${l}</button>`).join('')}
+      ${[['timeline', 'Timeline'], ['log', "Today's log"], ['summary', 'Summary'], ['month', 'This month']].map(([k, l]) => `<button role="tab" data-act="homeTab" data-tab="${k}" aria-pressed="${!S.homeFilter && S.homeTab === k}">${l}</button>`).join('')}
     </div>
     <div class="tab-body">${tabBody}</div>`;
 }
@@ -381,14 +385,32 @@ function quickBtn(q, running, sm) {
   if (q.mode === 'kindNeg') return `<button class="qb c-${c}" data-act="behaviour" data-kind="neg"><span class="qi">${q.icon}</span><span class="ql">${esc(q.label)}</span><small>tap</small></button>`;
   return `<button class="qb c-${c}" data-act="form" data-type="${q.k}" ${q.k === 'memory' ? 'data-first="1"' : ''}><span class="qi">${q.icon}</span><span class="ql">${esc(q.label)}</span><small>add</small></button>`;
 }
-const glance = (icon, v, l) => `<button class="g" data-act="homeTab" data-tab="summary"><span>${icon}</span><b>${esc(v)}</b><small>${l}</small></button>`;
+// Tapping a number shows only those entries of the day (tap again to show everything)
+const GLANCE_TYPES = {
+  sleep: ['sleep', 'nap', 'wake'], feed: ['breastfeed', 'bottle', 'meal', 'water'], meals: ['meal', 'water'],
+  wet: ['pee', 'poop', 'potty'], play: ['play', 'floor', 'walk', 'exercise', 'hobby'], outdoor: ['walk', 'exercise', 'play'],
+  screen: ['screen'], study: ['study', 'reading', 'homework'],
+};
+const glance = (icon, v, l, f) => `<button class="g ${S.homeFilter === f ? 'on' : ''}" data-act="glanceFilter" data-f="${f}" aria-pressed="${S.homeFilter === f}"><span>${icon}</span><b>${esc(v)}</b><small>${l}</small></button>`;
+function glanceList(list, today, f) {
+  return list.filter(e => GLANCE_TYPES[f].includes(e.type) && (e.date === today || (e.type === 'sleep' && e.end && dateKey(e.end) === today)))
+    .filter(e => f !== 'outdoor' || e.type !== 'play' || e.data?.where === 'Outdoor');
+}
+function glanceHeader(f, sm, n) {
+  const what = { sleep: ['🌙', 'Sleep', `Total ${fmtDur(sm.sleepMin)} · night ${fmtDur(sm.nightMin)} · ${sm.napCount} nap${sm.napCount === 1 ? '' : 's'}`],
+    feed: ['🍼', 'Feeds & meals', `${sm.feeds} milk feed${sm.feeds === 1 ? '' : 's'}${sm.milkMl ? ` (${sm.milkMl} ml bottle)` : ''} · ${sm.meals} meal${sm.meals === 1 ? '' : 's'}`],
+    meals: ['🥣', 'Meals', `${sm.meals} meal${sm.meals === 1 ? '' : 's'}${sm.foods.length ? ' · ' + sm.foods.map(x => x.name).slice(0, 4).join(', ') : ''}`],
+    wet: ['💛', 'Pee & poop', `${sm.pee} pee · ${sm.poop} poop`], play: ['🧸', 'Play', `${fmtDur(sm.playMin + sm.outdoorMin)} today`],
+    outdoor: ['🌳', 'Outdoor', `${fmtDur(sm.outdoorMin)} today`], screen: ['📱', 'Screen', `${fmtDur(sm.screenMin)} today`], study: ['📚', 'Learning', `${fmtDur(sm.learnMin)} today`] }[f];
+  return `<div class="filter-bar"><span>${what[0]} <b>${what[1]}</b> · ${n} entr${n === 1 ? 'y' : 'ies'}<br><small>${esc(what[2])}</small></span><button class="pill-btn" data-act="glanceFilter" data-f="${f}">✕ Show all</button></div>`;
+}
 // The four numbers that matter most at this age
 function glanceForAge(sm) {
   const m = S.months;
-  if (m < 12) return glance('🌙', fmtDur(sm.sleepMin), 'sleep') + glance('🍼', sm.feeds + sm.meals, 'feeds+meals') + glance('💛', sm.pee, 'wet') + glance('🧸', fmtDur(sm.playMin + sm.outdoorMin), 'play');
-  if (m < 36) return glance('🌙', fmtDur(sm.sleepMin), 'sleep') + glance('🥣', sm.meals, 'meals') + glance('🚽', sm.pee, 'pee') + glance('🌳', fmtDur(sm.outdoorMin), 'outdoor');
-  if (m < 72) return glance('🌙', fmtDur(sm.sleepMin), 'sleep') + glance('🥣', sm.meals, 'meals') + glance('🌳', fmtDur(sm.outdoorMin), 'outdoor') + glance('📱', fmtDur(sm.screenMin), 'screen');
-  return glance('🌙', fmtDur(sm.sleepMin), 'sleep') + glance('📚', fmtDur(sm.learnMin), 'study') + glance('⚽', fmtDur(sm.outdoorMin), 'active') + glance('📱', fmtDur(sm.screenMin), 'screen');
+  if (m < 12) return glance('🌙', fmtDur(sm.sleepMin), 'sleep', 'sleep') + glance('🍼', sm.feeds + sm.meals, 'feeds+meals', 'feed') + glance('💛', sm.pee, 'wet', 'wet') + glance('🧸', fmtDur(sm.playMin + sm.outdoorMin), 'play', 'play');
+  if (m < 36) return glance('🌙', fmtDur(sm.sleepMin), 'sleep', 'sleep') + glance('🥣', sm.meals, 'meals', 'meals') + glance('🚽', sm.pee, 'pee', 'wet') + glance('🌳', fmtDur(sm.outdoorMin), 'outdoor', 'outdoor');
+  if (m < 72) return glance('🌙', fmtDur(sm.sleepMin), 'sleep', 'sleep') + glance('🥣', sm.meals, 'meals', 'meals') + glance('🌳', fmtDur(sm.outdoorMin), 'outdoor', 'outdoor') + glance('📱', fmtDur(sm.screenMin), 'screen', 'screen');
+  return glance('🌙', fmtDur(sm.sleepMin), 'sleep', 'sleep') + glance('📚', fmtDur(sm.learnMin), 'study', 'study') + glance('⚽', fmtDur(sm.outdoorMin), 'active', 'outdoor') + glance('📱', fmtDur(sm.screenMin), 'screen', 'screen');
 }
 
 function homeSummary(sm, tg) {
@@ -1467,7 +1489,7 @@ async function renderSettings() {
       <p class="muted small">The colours change automatically every month until the first birthday, then with each age stage.</p>
       <button class="btn primary">Save</button></form>`;
   if (tab === 'backup') body = await backupSection();
-  if (tab === 'reminders') body = remindersSection().replace('<!--alarm-->', await alarmCard());
+  if (tab === 'reminders') body = remindersSection().replace('<!--alarm-->', await alarmCard()).replace('<!--custom-->', await customCard());
   if (tab === 'data') body = `<section class="card"><div class="label">Data on this phone for ${esc(s.name)}: ${(await db.all()).length} entries</div>
       <div class="row wrap"><button class="btn" data-act="export">⬇️ Backup file</button><button class="btn" data-act="csv">⬇️ Export CSV</button>
       <label class="btn">⬆️ Restore file<input type="file" id="importFile" accept="application/json" hidden></label></div>
@@ -1486,10 +1508,20 @@ async function renderSettings() {
     const caregivers = String(fd.get('caregivers')).split(',').map(x => x.trim()).filter(Boolean);
     S.settings = { ...S.settings, caregivers: caregivers.length ? caregivers : ['Parent'], me: caregivers.includes(fd.get('me')) ? fd.get('me') : caregivers[0], voiceLang: fd.get('voiceLang') || 'en-IN' };
   });
+  $('#customForm')?.addEventListener('submit', async ev => {
+    ev.preventDefault();
+    const fd = new FormData(ev.target), hm = fd.get('t'), what = String(fd.get('what') || '').trim().replace(/\s+/g, ' ');
+    if (!/^\d{2}:\d{2}$/.test(hm || '')) return toast('Pick a time first');
+    if (!what) return toast('Type what the reminder is for');
+    const list = customList();
+    if (list.some(x => x.hm === hm && x.text.toLowerCase() === what.toLowerCase())) return toast('That reminder is already in the list');
+    await saveCustom([...list, { hm, text: what }]);
+    toast(`✅ Added: ${what} · rings every day at ${hm}`);
+  });
   onSave('#remForm', async fd => {
     const { on, ...keep } = remCfg();
     S.settings = { ...S.settings, rem: { ...keep, learn: fd.get('learn') === 'on', learnAt: fd.get('learnAt') || '09:00', nap: fd.get('nap') === 'on',
-      feedHrs: Number(fd.get('feedHrs')) || 0, meds: fd.get('meds') === 'on', vax: fd.get('vax') === 'on', custom: fd.get('custom') || '' } };
+      feedHrs: Number(fd.get('feedHrs')) || 0, meds: fd.get('meds') === 'on', vax: fd.get('vax') === 'on', custom: keep.custom || '' } };
   });
   onSave('#displayForm', fd => { S.settings = { ...S.settings, theme: fd.get('theme') || 'auto' }; });
   $('#syncForm')?.addEventListener('submit', onSyncSubmit);
@@ -1796,7 +1828,7 @@ async function toggleTimer(type, opts = {}) {
     const mins = entryMinutes(running);
     route();
     if (type === 'meal') { toast(`🥣 Eating time: ${fmtDur(mins)} — add what ${S.P.he} ate`); return openForm('meal', running, { focusFoods: true, noFocus: true }); }
-    if (type === 'sleep') { toast(`🌙 Night sleep: ${fmtDur(mins)}`, [['Undo', async () => { running.end = null; await db.put(running); closeSheet(); route(); }]]); return openMorning(running); }
+    if (type === 'sleep' || type === 'nap') { toast(`${t.icon} ${t.label}: ${fmtDur(mins)}`, [['Undo', async () => { running.end = null; await db.put(running); closeSheet(); route(); }]]); return openMorning(running); }
     return toast(`${t.icon} ${t.label}: ${fmtDur(mins)} (${fmtTime(running.start)}–${fmtTime(running.end)})`, [
       ['Undo', async () => { running.end = null; await db.put(running); route(); }],
       ['Add details', () => openForm(type, running)]]);
@@ -1892,6 +1924,22 @@ const todaysEi = () => pickDaily(S.stage.ei.activities, 0);
 async function learnedToday(after = 0) {
   return (await db.byDate(dateKey())).some(e => ['study', 'reading', 'homework'].includes(e.type) && e.start >= after);
 }
+function todayStrip() {
+  const ei = todaysEi();
+  return `<section class="today-strip">
+    <button class="ts c-learn" data-act="learn"><span>📚</span><b>Learning time</b><small>Today's book, material & rhyme</small></button>
+    <button class="ts c-feel" data-act="eiToday"><span>💛</span><b>Feelings activity</b><small>${esc(ei.length > 46 ? ei.slice(0, 44) + '…' : ei)}</small></button></section>`;
+}
+async function openEiToday() {
+  const ei = todaysEi(), today = dateKey(), row = eiRowFor(S.months);
+  const done = (await db.byDate(today)).some(e => e.type === 'ei' && e.data?.text === ei);
+  openSheet(`<div class="sheet-hd"><h3>💛 Today's feelings activity</h3><button class="icon-btn" data-act="close" aria-label="Close">✕</button></div>
+    <div class="learn-list"><div class="li ei"><span>💛</span><div><b>${esc(ei)}</b>
+      <br><button class="btn small ${done ? '' : 'primary'}" data-act="eidone" data-text="${esc(ei)}" ${done ? 'disabled' : ''}>${done ? '✓ Done today' : 'We did it'}</button></div></div>
+      ${row ? `<div class="li"><span>🌱</span><div><b>This month: ${esc(row.focus)}</b><br><small>${esc(row.develops)}</small>${row.acts?.length ? `<br><small>Also try: ${esc(row.acts.join(' · '))}</small>` : ''}</div></div>` : ''}
+      <div class="li"><span>🔁</span><div><b>Serve and return</b><br><small>${esc(SERVE_RETURN)}</small><br><a class="small" href="${LINKS.serveReturn}" target="_blank" rel="noopener">Harvard: 5 steps for serve and return ↗</a></div></div>
+    </div>`, { focus: false });
+}
 async function learningCard() {
   const r = remCfg();
   if (!r.learn) return '';
@@ -1911,13 +1959,15 @@ function openLearning(salt = 0) {
     <p class="muted small">Ideas for ${esc(S.settings.name)} at ${esc(ageText(S.settings.dob))}. Keep it short and fun: stop while ${S.P.he} is still enjoying it.</p>
     <div class="learn-list">
       <div class="li"><span>🎯</span><div><b>Today's kind of reading</b><br>${esc(p.type)}</div></div>
-      <div class="li"><span>📖</span><div><b>Books to read</b>${p.books.map(b => `<br>“${esc(b[0])}” <small class="muted">· ${esc(b[1])} · ${esc(b[2])}</small>`).join('')}</div></div>
+      <div class="li"><span>📖</span><div><b>Books to read</b>${p.books.map(b => `<br>“${esc(b[0])}” <small class="muted">· ${esc(b[1])} · ${esc(b[2])}</small> <a class="small" href="${findBook(b)}" target="_blank" rel="noopener">find ↗</a>`).join('')}
+        <br><a class="small" href="${LINKS.storyweaver}" target="_blank" rel="noopener">📗 Free Tamil & English picture books (StoryWeaver) ↗</a></div></div>
       <div class="li"><span>🧩</span><div><b>Material to use</b><br>${esc(p.material)}</div></div>
-      <div class="li"><span>🎵</span><div><b>Rhyme / song</b><br>${esc(p.rhyme)}</div></div>
-      <div class="li ei"><span>💛</span><div><b>Feelings activity today</b><br>${esc(ei)}</div></div>
+      <div class="li"><span>🎵</span><div><b>Rhyme / song</b><br>${esc(p.rhyme)} <a class="small" href="${playRhyme(p.rhyme)}" target="_blank" rel="noopener">▶ listen</a>
+        <br><a class="small" href="${LINKS.tamilRhymes}" target="_blank" rel="noopener">Tamil rhymes with words ↗</a></div></div>
+      <div class="li ei"><span>💛</span><div><b>Feelings activity today</b><br>${esc(ei)}<br><button class="btn small" data-act="eiToday">More feelings ideas</button></div></div>
     </div>
     <details class="small"><summary>All books for this age (${L.books.length})</summary><ul>${L.books.map(b => `<li>“${esc(b[0])}” · ${esc(b[1])} <span class="muted">· ${esc(b[2])}</span></li>`).join('')}</ul>
-      <p class="muted">Free Tamil and English picture books: storyweaver.org.in (Pratham Books).</p></details>
+      <p class="muted">Lists drawn from <a href="${LINKS.nemours}" target="_blank" rel="noopener">Nemours Reading BrightStart</a>, <a href="${LINKS.booktrust}" target="_blank" rel="noopener">BookTrust</a> and Pratham Books' <a href="${LINKS.storyweaver}" target="_blank" rel="noopener">StoryWeaver</a> (free).</p></details>
     <div class="row actions"><button class="btn" data-act="learnMore">🔄 Other ideas</button><button class="btn primary" data-act="learnStart">⏱ Start learning</button></div>`, { focus: false });
 }
 async function openMorning(stopped) {
@@ -2025,10 +2075,9 @@ function remindersSection() {
       <label>Feed reminder<select name="feedHrs">${[[0, 'Off'], [2, 'Every 2 hours'], [2.5, 'Every 2½ hours'], [3, 'Every 3 hours'], [3.5, 'Every 3½ hours'], [4, 'Every 4 hours']].map(([v, l]) => `<option value="${v}" ${Number(r.feedHrs) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       ${tog('meds', 'Medicines', 'When a prescribed medicine is due during an illness')}
       ${tog('vax', 'Vaccines', 'A week before a government-schedule vaccine is due')}
-      <div class="label">⏰ My own daily reminders</div>
-      <label>One per line: time and what<textarea name="custom" rows="3" placeholder="08:00 Vitamin D drops&#10;17:30 Evening walk">${esc(r.custom || '')}</textarea></label>
       <button class="btn primary">Save</button>
     </form>
+    <!--custom-->
     <p class="muted small">Nap, feed and medicine reminders follow what you log, so they update each time you open the app.</p>`;
 }
 
@@ -2200,7 +2249,11 @@ async function syncBell(force = false) {
   if (!remCfg().on || !bellUrl() || lsGet('hp-bell-ok') !== bellUrl()) return;
   const sub = await bellSub();
   if (!sub) return;
-  const payload = JSON.stringify({ id: bellId(), sub: { endpoint: sub.endpoint }, jobs: await bellJobs(), tz: new Date().getTimezoneOffset(), name: S.settings.me || '' });
+  // Each child's reminders are kept on this phone; the bell gets all of them together.
+  const mine = (await bellJobs()).map(j => ({ ...j, tag: `${S.child}-${j.tag || ''}`.slice(0, 40) }));
+  lsSet(`hp-bell-jobs:${S.child}`, JSON.stringify(mine));
+  const jobs = S.children.flatMap(c => { if (c.id === S.child) return mine; try { return JSON.parse(lsGet(`hp-bell-jobs:${c.id}`) || '[]'); } catch (e) { return []; } }).slice(0, 40);
+  const payload = JSON.stringify({ id: bellId(), sub: { endpoint: sub.endpoint }, jobs, tz: new Date().getTimezoneOffset(), name: S.settings.me || '' });
   const last = lsGet('hp-bell-last') || '';
   if (!force && last === payload && Date.now() - Number(lsGet('hp-bell-at') || 0) < 12 * 3600000) return;
   try {
@@ -2253,6 +2306,41 @@ async function testAlarm() {
   S.bellOk = false;
   await notify('test', `📚 Learning time for ${S.settings.name}`, `${p.type} · try “${p.books[0][0]}”`, 'learn');
   delete fired.test;
+}
+// "My own daily reminders": stored as lines "HH:MM what" in settings.rem.custom, shown as rows.
+function customList() {
+  return String(remCfg().custom || '').split('\n').map(l => l.trim().match(/^(\d{1,2})[:.](\d{2})\s*(.*)$/)).filter(Boolean)
+    .map(m => ({ hm: `${m[1].padStart(2, '0')}:${m[2]}`, text: m[3] || 'Reminder' })).sort((a, b) => a.hm.localeCompare(b.hm));
+}
+async function saveCustom(list) {
+  const { on, ...keep } = remCfg();
+  S.settings = { ...S.settings, rem: { ...keep, custom: list.sort((a, b) => a.hm.localeCompare(b.hm)).map(x => `${x.hm} ${x.text}`).join('\n') } };
+  await db.setKV('settings', S.settings);
+  await syncBell(true).catch(() => {});
+  await route();
+}
+const nextRing = hm => {
+  const now = new Date(), t = new Date(); t.setHours(0, hmToMin(hm), 0, 0);
+  return t > now ? `today at ${hm}` : `tomorrow at ${hm}`;
+};
+async function customCard() {
+  const list = customList(), r = remCfg(), on = alarmsOn(), closed = on && await bellConnected();
+  const status = !on ? '🔕 Turn on alarms above to hear it' : closed ? '🔔 Rings even when the app is closed' : '🔔 Rings while the app is open';
+  const row = (icon, hm, text, sub, i) => `<li class="${on ? 'on' : 'off'}"><span class="rt">${hm}</span><span class="rx"><b>${icon} ${esc(text)}</b><small>${esc(sub)}</small></span>${i != null ? `<button class="icon-btn" data-act="remDel" data-i="${i}" aria-label="Remove ${esc(text)}">✕</button>` : ''}</li>`;
+  return `<div class="label">⏰ My daily reminders</div>
+    <section class="card rem-list-card">
+      <ul class="rem-list">
+        ${[...(r.learn ? [{ hm: r.learnAt, learn: true }] : []), ...list.map((x, i) => ({ ...x, i }))].sort((x, y) => x.hm.localeCompare(y.hm))
+          .map(x => x.learn ? row('📚', x.hm, 'Learning time', `Every day · next ${nextRing(x.hm)} · change the time above`) : row('⏰', x.hm, x.text, `Every day · next ${nextRing(x.hm)}`, x.i)).join('')}
+      </ul>
+      ${!list.length ? '<p class="muted small">No reminders of your own yet. Add one below, for example Vitamin D drops or book time.</p>' : ''}
+      <p class="small rem-status ${on ? 'ok' : ''}">${status}</p>
+      <form id="customForm" class="add-rem">
+        <input type="time" name="t" value="21:00" aria-label="Time" required>
+        <input name="what" placeholder="What? e.g. Book time" maxlength="60" aria-label="What to remind" required>
+        <button class="btn primary">＋ Add</button>
+      </form>
+    </section>`;
 }
 async function alarmCard() {
   const on = alarmsOn(), closed = on && await bellConnected();
@@ -2331,11 +2419,19 @@ async function handleClick(el, a, ev) {
     }
     case 'toastAct': { const f = toast._actions?.[Number(el.dataset.i)]; $('#toast').hidden = true; if (f) await f(); break; }
     case 'learn': openLearning(); break;
+    case 'eiToday': openEiToday(); break;
     case 'learnMore': openLearning((S.learnSalt || 0) + 1); break;
     case 'learnStart': closeSheet(); { const run = (await db.byType('study')).find(e => !e.end); if (!run) await toggleTimer('study'); else toast('📚 Learning timer is already running'); } break;
     case 'print': window.print(); break;
     case 'alarmsOn': closeSheet(); await turnOnAlarms(); break;
     case 'alarmsOff': await turnOffAlarms(); break;
+    case 'remDel': {
+      const list = customList(), it = list[Number(el.dataset.i)];
+      if (!it || !confirm(`Remove the reminder "${it.text}" at ${it.hm}?`)) break;
+      await saveCustom(list.filter((_, i) => i !== Number(el.dataset.i)));
+      toast('Reminder removed');
+      break;
+    }
     case 'alarmTest': await testAlarm(); break;
     case 'shareDoc': shareText(main().querySelector('.doc-sheet').innerText.replace(/\n{3,}/g, '\n\n'), 'Doctor visit summary'); break;
     case 'shareWeek': shareText(main().innerText.replace(/Share with family|‹ More/g, '').replace(/\n{3,}/g, '\n\n').trim(), `${S.settings.name}'s week`); break;
@@ -2362,7 +2458,14 @@ async function handleClick(el, a, ev) {
       route(); break;
     }
     case 'driveSignOut': if (confirm('Sign out of Google Drive backup on this phone? Your data stays on the phone and in Drive.')) { await driveSignOut(); setBackends({ drive: false }); route(); } break;
-    case 'homeTab': S.homeTab = el.dataset.tab; route(); break;
+    case 'homeTab': S.homeTab = el.dataset.tab; S.homeFilter = null; route(); break;
+    case 'glanceFilter': {
+      S.homeFilter = S.homeFilter === el.dataset.f ? null : el.dataset.f;
+      if (S.homeFilter) S.homeTab = 'log';
+      await route();
+      if (S.homeFilter) main().querySelector('.filter-bar')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      break;
+    }
     case 'diaryMode': S.diaryMode = el.dataset.mode; route(); break;
     case 'selStart': S.selMode = true; S.sel.clear(); route(); break;
     case 'selCancel': S.selMode = false; S.sel.clear(); route(); break;
