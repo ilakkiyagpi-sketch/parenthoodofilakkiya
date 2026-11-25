@@ -22,7 +22,7 @@ const APP_NAME = 'Happy Parenthood';
 // ------------------------------------------------------------------ state
 const S = {
   settings: null, months: 0, stage: null, theme: null, child: 'main', children: [], P: pr('boy'),
-  view: 'home', selMode: false, sel: new Set(), homeTab: 'timeline', diaryMode: 'timeline', homeCat: null, settingsTab: null, diaryDate: dateKey(), growTab: 'milestones', trendDays: 7, guideAll: false,
+  view: 'home', selMode: false, sel: new Set(), homeTab: 'timeline', homeCat: null, settingsTab: null, diaryDate: dateKey(), growTab: 'milestones', trendDays: 7, guideAll: false,
   healthTab: 'illness', healthQ: '', voiceItems: null, voiceText: '',
 };
 const $ = sel => document.querySelector(sel);
@@ -339,11 +339,11 @@ async function renderHome() {
   let tabBody = '';
   const todayN = list.filter(e => e.date === today && e.type !== 'ei').length;
   if (S.homeFilter && !GLANCE_TYPES[S.homeFilter]) S.homeFilter = null;
-  if (S.homeTab === 'timeline') tabBody = selBar(todayN) + timelineHtml(list, today);
+  if (!['timeline', 'summary', 'month'].includes(S.homeTab)) S.homeTab = 'timeline'; // the old "Today's log" tab is now part of the timeline
   if (S.homeFilter && GLANCE_TYPES[S.homeFilter]) {
     const fl = glanceList(list, today, S.homeFilter);
-    tabBody = glanceHeader(S.homeFilter, sm, fl.length) + entryList([...fl].reverse(), 'Nothing of this kind logged yet today.');
-  } else if (S.homeTab === 'log') tabBody = selBar(todayN) + entryList(list.filter(e => e.date === today).reverse(), 'Nothing logged yet today. Pick a category above and tap a button, or say it with 🎤.');
+    tabBody = glanceHeader(S.homeFilter, sm, fl.length) + (fl.length ? timelineHtml(fl, today) : '<p class="empty">Nothing of this kind logged yet today.</p>');
+  } else if (S.homeTab === 'timeline') tabBody = selBar(todayN) + timelineHtml(list, today);
   else if (S.homeTab === 'summary') tabBody = homeSummary(sm, S.stage.targets);
   else tabBody = await homeMonth(list, today);
 
@@ -364,7 +364,7 @@ async function renderHome() {
       <button class="pill-btn" data-act="toggle" data-type="${e.type}">Stop</button></div>`).join('')}
     <section class="glance" aria-label="Today at a glance">${glanceForAge(sm)}</section>
     <div class="seg" role="tablist">
-      ${[['timeline', 'Timeline'], ['log', "Today's log"], ['summary', 'Summary'], ['month', 'This month']].map(([k, l]) => `<button role="tab" data-act="homeTab" data-tab="${k}" aria-pressed="${!S.homeFilter && S.homeTab === k}">${l}</button>`).join('')}
+      ${[['timeline', "Today's timeline"], ['summary', 'Summary'], ['month', 'This month']].map(([k, l]) => `<button role="tab" data-act="homeTab" data-tab="${k}" aria-pressed="${!S.homeFilter && S.homeTab === k}">${l}</button>`).join('')}
     </div>
     <div class="tab-body">${tabBody}</div>`;
 }
@@ -514,7 +514,7 @@ const updateSel = () => {
 function timelineHtml(list, day) {
   const items = list.filter(e => e.type !== 'ei' && (e.date === day || (typeInfo(e.type).timed && e.end && dateKey(e.end) === day)))
     .sort((a, b) => a.start - b.start);
-  if (!items.length) return `<p class="empty">Nothing on the timeline yet. Each new activity you log carries on from the last one.</p>`;
+  if (!items.length) return `<p class="empty">Nothing logged yet. Tap a button above or say it with 🎤 — each entry appears here in time order.</p>`;
   let lastEnd = null;
   const rows = [];
   for (const e of items) {
@@ -875,9 +875,8 @@ async function renderDiary() {
       <div><b>${sm.meals}</b><span>meals</span></div><div><b>${sm.feeds}</b><span>milk</span></div>
       <div><b>${sm.pee}/${sm.poop}</b><span>pee/poop</span></div><div><b>${fmtDur(sm.outdoorMin)}</b><span>outdoor</span></div>
     </div>${sm.foods.length ? `<p class="small"><b>Foods:</b> ${esc(sm.foods.map(f => `${f.name}${f.qty ? ` (${f.qty} ${f.unit})` : ''}`).join(', '))}</p>` : ''}</div>
-    <div class="seg" role="tablist">${[['timeline', 'Timeline'], ['list', 'List']].map(([k, l]) => `<button role="tab" data-act="diaryMode" data-mode="${k}" aria-pressed="${S.diaryMode === k}">${l}</button>`).join('')}</div>
     ${selBar(list.filter(e => e.date === d).length)}
-    ${S.diaryMode === 'timeline' ? timelineHtml(list, d) : entryList(list.filter(e => e.date === d))}
+    ${timelineHtml(list, d)}
     <button class="btn wide" data-act="openPicker">＋ Add entry to this day</button>`;
 }
 
@@ -2461,12 +2460,11 @@ async function handleClick(el, a, ev) {
     case 'homeTab': S.homeTab = el.dataset.tab; S.homeFilter = null; route(); break;
     case 'glanceFilter': {
       S.homeFilter = S.homeFilter === el.dataset.f ? null : el.dataset.f;
-      if (S.homeFilter) S.homeTab = 'log';
+      if (S.homeFilter) S.homeTab = 'timeline';
       await route();
       if (S.homeFilter) main().querySelector('.filter-bar')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       break;
     }
-    case 'diaryMode': S.diaryMode = el.dataset.mode; route(); break;
     case 'selStart': S.selMode = true; S.sel.clear(); route(); break;
     case 'selCancel': S.selMode = false; S.sel.clear(); route(); break;
     case 'selAll': {
