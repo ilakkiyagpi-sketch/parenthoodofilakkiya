@@ -54,7 +54,7 @@ const TA = {
   'naps': 'குட்டித் தூக்கம்', 'milk': 'பால்', 'pee/poop': 'சிறுநீர்/மலம்',
   // more / settings
   'Ask': 'கேள்', 'Routine': 'வழக்கம்', 'Milestones': 'வளர்ச்சிப் படிகள்', 'Trends': 'போக்குகள்', 'Physical growth': 'உடல் வளர்ச்சி',
-  'Foods tried': 'சாப்பிட்ட உணவுகள்', 'Foods': 'உணவுகள்', 'Vaccines': 'தடுப்பூசிகள்', 'Guide': 'வழிகாட்டி', 'Weekly report': 'வார அறிக்கை',
+  'Foods tried': 'சாப்பிட்ட உணவுகள்', 'Foods': 'உணவுகள்', 'Vaccines': 'தடுப்பூசிகள்', 'Guide': 'வழிகாட்டி', 'Weekly report': 'வார அறிக்கை', 'Weekly report & trends': 'வார அறிக்கை & போக்குகள்',
   'Doctor summary': 'மருத்துவர் சுருக்கம்', 'Install app': 'செயலியை நிறுவு', "Amma's wellbeing": 'அம்மாவின் நலம்',
   'Child profile': 'குழந்தை விவரம்', 'Children': 'குழந்தைகள்', 'Family & voice': 'குடும்பம் & குரல்', 'Reminders & alarms': 'நினைவூட்டல்கள் & அலாரம்',
   'Look & theme': 'தோற்றம் & கருப்பொருள்', 'Online backup': 'ஆன்லைன் காப்பு', 'Files & data': 'கோப்புகள் & தரவு', 'About': 'பற்றி',

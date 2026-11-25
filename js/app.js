@@ -1078,8 +1078,8 @@ function renderMore() {
     // Only things not already on Home, Health or the top bar (💬 Ask and ⚙️ Settings are there)
     ['routine', '🕒', 'Routine', `Timetable for ${S.P.his} age`], ['grow:milestones', '🎯', 'Milestones', `Tick what ${S.P.he} can do`],
     ['grow:memories', '✨', 'New things', 'Firsts & memories'], ['grow:physical', '📏', 'Physical growth', 'Monthly checks & WHO charts'],
-    ['grow:teeth', '🦷', 'Teeth', 'Tap each new tooth'], ['grow:trends', '📈', 'Trends', 'Sleep, food, play charts'],
-    ['week', '📊', 'Weekly report', 'This week vs last week'], ['guide', '📖', 'Guide', 'Parenting library'],
+    ['grow:teeth', '🦷', 'Teeth', 'Tap each new tooth'], ['week', '📊', 'Weekly report & trends', 'This week vs last + charts'],
+    ['guide', '📖', 'Guide', 'Parenting library'],
   ];
   main().innerHTML = `<h2>More</h2>
     <section class="more-grid">${cards.map(([v, i, t, s]) => {
@@ -1212,8 +1212,9 @@ function triggerAdvice(t) {
 
 // ------------------------------------------------------------------ GROW
 async function renderGrow() {
-  const tabs = [['milestones', 'Milestones'], ['physical', 'Physical growth'], ['memories', 'New things'], ['trends', 'Trends'], ['foods', 'Foods'], ['teeth', 'Teeth'], ['vaccines', 'Vaccines']];
+  const tabs = [['milestones', 'Milestones'], ['physical', 'Physical growth'], ['memories', 'New things'], ['foods', 'Foods'], ['teeth', 'Teeth'], ['vaccines', 'Vaccines']];
   if (S.growTab === 'growth') S.growTab = 'physical';
+  if (S.growTab === 'trends') { S.view = 'week'; return route(); } // trends live in the weekly report now
   const body = await ({ milestones: growMilestones, trends: growTrends, physical: growPhysical, foods: growFoods, teeth: growTeeth, vaccines: growVaccines, memories: growMemories })[S.growTab]();
   main().innerHTML = `${backBar()}<div class="seg">${tabs.map(([k, l]) => `<button data-act="growTab" data-tab="${k}" aria-pressed="${S.growTab === k}">${l}</button>`).join('')}</div>${body}`;
 }
@@ -2143,8 +2144,7 @@ async function renderWeek() {
     return `<tr><td>${icon} ${label}</td><td><b>${fmt(a)}</b> ${arrow}</td><td class="muted">${b ? fmt(b) : '—'}</td></tr>`;
   };
   const d1 = v => v.toFixed(1), dur = v => fmtDur(v);
-  const sleepBars = w.cur.map(({ d, s }) => ({ label: parseKey(d).toLocaleDateString(undefined, { weekday: 'short' }), value: s.sleepMin / 60 }));
-  main().innerHTML = `${backBar()}<h2>📊 ${esc(S.settings.name)}'s week</h2>
+  main().innerHTML = `${backBar()}<div class="week-part"><h2>📊 ${esc(S.settings.name)}'s week</h2>
     <p class="muted">${esc(fmtDateShort(w.from))} – ${esc(fmtDateShort(w.to))} · compared with the week before</p>
     <section class="tiles week-tiles">
       ${tile('⭐', 'Milestones', w.newMs, '', null, 'newly ticked')}${tile('🥕', 'New foods', w.newFoods.length, '', null, w.newFoods.slice(0, 3).join(', '))}
@@ -2156,9 +2156,12 @@ async function renderWeek() {
       ${row('🌳', 'Outdoor', s => s.outdoorMin, dur)}${row('🧸', 'Play', s => s.playMin, dur)}${row('📚', 'Learning', s => s.learnMin, dur)}
       ${S.months >= 18 ? row('📱', 'Screen', s => s.screenMin, dur, false) : ''}${row('💗', 'Kind moments', s => s.pos, d1)}
     </tbody></table><p class="muted small">▲ ▼ show changes over 5% (green = in a good direction). Days with nothing logged are left out.</p></section>
-    ${barChart({ title: 'Sleep each day (hours)', data: sleepBars, unit: ' h', target: S.stage.targets.sleep })}
     ${w.mems.length ? `<section class="card"><div class="label">✨ This week's new things</div><ul class="mini-list">${w.mems.map(e => `<li><b>${esc(fmtDateShort(e.date))}</b> ${esc(e.data?.text || e.note)}</li>`).join('')}</ul></section>` : ''}
-    <div class="row wrap"><button class="btn primary" data-act="shareWeek">📤 Share with family</button></div>`;
+    <div class="row wrap"><button class="btn primary" data-act="shareWeek">📤 Share this week with family</button></div>
+    </div>
+    <h2 id="trends">📈 Trends</h2>
+    <p class="muted small">Day-by-day charts for the last 7, 14 or 30 days.</p>
+    ${await growTrends()}`;
 }
 async function weekBanner() {
   const day = new Date().getDay();
@@ -2790,7 +2793,7 @@ async function handleClick(el, a, ev) {
     }
     case 'alarmTest': await testAlarm(); break;
     case 'shareDoc': shareText(main().querySelector('.doc-sheet').innerText.replace(/\n{3,}/g, '\n\n'), 'Doctor visit summary'); break;
-    case 'shareWeek': shareText(main().innerText.replace(/Share with family|‹ More/g, '').replace(/\n{3,}/g, '\n\n').trim(), `${S.settings.name}'s week`); break;
+    case 'shareWeek': shareText((main().querySelector('.week-part') || main()).innerText.replace(/📤 Share this week with family/g, '').replace(/\n{3,}/g, '\n\n').trim(), `${S.settings.name}'s week`); break;
     case 'openWeek': await db.setKV('weekSeen', el.dataset.wk); S.view = 'week'; route(); break;
     case 'qDel': await db.setKV('doctorQs', (await db.getKV('doctorQs', [])).filter(q => q.id !== el.dataset.id)); route(); break;
     case 'eidone': {
