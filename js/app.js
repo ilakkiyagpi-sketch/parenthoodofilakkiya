@@ -10,6 +10,7 @@ import { answer as askAnswer, suggestions as askSuggestions, TOPICS as ASK_TOPIC
 import { GUIDE, DAILY_TIPS } from './guide.js';
 import { learningFor, wakeWindowFor, LINKS, SERVE_RETURN, findBook, playRhyme } from './learning.js';
 import { BELL_URL } from './config.js';
+import { getLang, setLang, startTranslating } from './i18n.js';
 import { esc, uid, dateKey, parseKey, addDays, fmtTime, toLocalInput, fromLocalInput, fmtDur, fmtDateLong, fmtDateShort,
   hmToMin, minToHm, ageMonths, ageText, dayOfYear, entryMinutes } from './util.js';
 import { barChart, pairChart, lineChart, growthChart, wireTooltips } from './charts.js';
@@ -103,6 +104,7 @@ async function boot() {
   wireTooltips(document.body);
   watchPhotos();
   setInterval(tickTimers, 1000);
+  startTranslating();
   setInterval(() => checkReminders().catch(() => {}), 30000);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkReminders().catch(() => {}); });
   navigator.serviceWorker?.addEventListener('message', e => { if (e.data?.go) handleGo(e.data.go); });
@@ -229,7 +231,7 @@ function applyAgeTheme() {
   document.querySelector('meta[name=theme-color]')?.setAttribute('content', th.accent);
 }
 
-const NAV_OF = { home: 'home', diary: 'diary', health: 'health', heart: 'heart', more: 'more', grow: 'more', routine: 'more', guide: 'more', settings: 'more', ask: 'more', doctor: 'health', week: 'more' };
+const NAV_OF = { home: 'home', diary: 'diary', health: 'health', heart: 'heart', more: 'more', grow: 'more', routine: 'more', guide: 'more', settings: 'more', ask: 'more', doctor: 'health', week: 'more', mom: 'more' };
 let lastPage = '';
 // Re-render the current screen. The scroll position is kept when staying on the same
 // screen (e.g. after tapping a button or a checkbox) and reset only when changing screens.
@@ -242,7 +244,8 @@ async function route() {
   document.querySelectorAll('nav.tabs button').forEach(b => b.setAttribute('aria-current', b.dataset.view === NAV_OF[S.view] ? 'page' : 'false'));
   document.body.dataset.view = S.view;
   renderHeader();
-  await ({ ask: renderAsk, home: renderHome, diary: renderDiary, health: renderHealth, heart: renderHeart, more: renderMore, grow: renderGrow, routine: renderRoutine, guide: renderGuide, settings: renderSettings, doctor: renderDoctor, week: renderWeek })[S.view]();
+  await ({ ask: renderAsk, home: renderHome, diary: renderDiary, health: renderHealth, heart: renderHeart, more: renderMore, grow: renderGrow, routine: renderRoutine, guide: renderGuide, settings: renderSettings, doctor: renderDoctor, week: renderWeek, mom: renderMom })[S.view]();
+  syncRunNotes().catch(() => {});
   if (keep) {
     const ds = main().querySelectorAll('details');
     if (open && open.length === ds.length) ds.forEach((d, i) => { d.open = open[i]; });
@@ -1075,6 +1078,7 @@ function renderMore() {
     ['grow:physical', '📏', 'Physical growth', 'Monthly checks & WHO charts'], ['grow:foods', '🥕', 'Foods tried', 'Food diary & reactions'],
     ['grow:vaccines', '💉', 'Vaccines', 'Government schedule'], ['guide', '📖', 'Guide', 'Parenting library'],
     ['week', '📊', 'Weekly report', 'This week vs last week'], ['doctor', '🩺', 'Doctor summary', 'For the next visit, as PDF'],
+    ['grow:teeth', '🦷', 'Teeth', 'Tap each new tooth'], ['mom', '💗', "Amma's wellbeing", 'One-minute check-in'],
     ['settings', '⚙️', 'Settings', 'Profile, backup, buttons'],
   ];
   main().innerHTML = `<h2>More</h2>
@@ -1210,9 +1214,9 @@ function triggerAdvice(t) {
 
 // ------------------------------------------------------------------ GROW
 async function renderGrow() {
-  const tabs = [['milestones', 'Milestones'], ['physical', 'Physical growth'], ['memories', 'New things'], ['trends', 'Trends'], ['foods', 'Foods'], ['vaccines', 'Vaccines']];
+  const tabs = [['milestones', 'Milestones'], ['physical', 'Physical growth'], ['memories', 'New things'], ['trends', 'Trends'], ['foods', 'Foods'], ['teeth', 'Teeth'], ['vaccines', 'Vaccines']];
   if (S.growTab === 'growth') S.growTab = 'physical';
-  const body = await ({ milestones: growMilestones, trends: growTrends, physical: growPhysical, foods: growFoods, vaccines: growVaccines, memories: growMemories })[S.growTab]();
+  const body = await ({ milestones: growMilestones, trends: growTrends, physical: growPhysical, foods: growFoods, teeth: growTeeth, vaccines: growVaccines, memories: growMemories })[S.growTab]();
   main().innerHTML = `${backBar()}<div class="seg">${tabs.map(([k, l]) => `<button data-act="growTab" data-tab="${k}" aria-pressed="${S.growTab === k}">${l}</button>`).join('')}</div>${body}`;
 }
 
@@ -1332,9 +1336,10 @@ async function growPhysical() {
 async function growFoods() {
   const map = await db.getKV('foods', {});
   const list = Object.entries(map).sort((a, b) => b[1].first.localeCompare(a[1].first));
-  return `<p>${list.length} different foods tried so far. Variety in the first two years shapes lifelong eating habits.</p>
-    ${list.length ? `<table class="foods"><thead><tr><th>Food</th><th>First tried</th><th>Times</th><th>Reaction</th></tr></thead><tbody>
-    ${list.map(([n, f]) => `<tr><td>${esc(n)}</td><td>${esc(fmtDateShort(f.first))}</td><td>${f.count}</td><td>${esc(f.reactions.join('; ')) || '—'}</td></tr>`).join('')}</tbody></table>` : '<p class="empty">Log a meal to start the food diary.</p>'}
+  return `${await foodIntro()}
+    <div class="label">🍽️ All foods tried (${list.length})</div>
+    ${list.length ? `<table class="foods"><thead><tr><th></th><th>Food</th><th>First tried</th><th>Times</th><th>Reaction</th></tr></thead><tbody>
+    ${list.map(([n, f]) => `<tr><td><button class="icon-btn fav ${f.fav ? 'on' : ''}" data-act="foodFav" data-food="${esc(n)}" aria-label="Favourite">${f.fav ? '❤️' : '🤍'}</button></td><td>${esc(n)}</td><td>${esc(fmtDateShort(f.first))}</td><td>${f.count}</td><td>${esc((f.reactions || []).join('; ')) || '—'}</td></tr>`).join('')}</tbody></table><p class="muted small">Tap 🤍 to mark a favourite.</p>` : '<p class="empty">Log a meal to start the food diary.</p>'}
     <p class="muted small">Introduce one new food at a time and wait 2–3 days to watch for reactions. Common allergens (egg, peanut paste, dairy, wheat, fish) are usually introduced early — ask your paediatrician, especially if there is eczema or family allergy.</p>`;
 }
 
@@ -1431,6 +1436,8 @@ async function renderSettings() {
       <fieldset><legend>Light or dark</legend><div class="chips">${[['auto', '📱 Automatic'], ['light', '☀️ Light'], ['dark', '🌙 Dark']].map(([v, l]) => `<label class="chip"><input type="radio" name="theme" value="${v}" ${v === s.theme ? 'checked' : ''}><span>${l}</span></label>`).join('')}</div></fieldset>
       <div class="theme-now"><span class="big-emoji">${S.theme.emoji}</span><div><b>${esc(S.theme.label)}: ${esc(S.theme.name)}</b><br><small>${esc(S.theme.about)}</small></div></div>
       <p class="muted small">The colours change automatically every month until the first birthday, then with each age stage.</p>
+      <fieldset><legend>Language · மொழி (this phone)</legend><div class="chips">${[['en', 'English'], ['ta', 'தமிழ்']].map(([v, l]) => `<label class="chip"><input type="radio" name="lang" value="${v}" ${v === getLang() ? 'checked' : ''}><span>${l}</span></label>`).join('')}</div></fieldset>
+      <p class="muted small">Tamil changes the menus, buttons and labels. Longer articles and milestones stay in English for now.</p>
       <button class="btn primary">Save</button></form>`;
   if (tab === 'backup') body = await backupSection();
   if (tab === 'reminders') body = remindersSection().replace('<!--alarm-->', await alarmCard()).replace('<!--custom-->', await customCard());
@@ -1464,10 +1471,15 @@ async function renderSettings() {
   });
   onSave('#remForm', async fd => {
     const { on, ...keep } = remCfg();
+    try { localStorage.setItem('hp-runnotes', $('#runNotes')?.checked ? '1' : '0'); } catch (e) { /* ignore */ }
     S.settings = { ...S.settings, rem: { ...keep, learn: fd.get('learn') === 'on', learnAt: fd.get('learnAt') || '09:00', nap: fd.get('nap') === 'on',
       feedHrs: Number(fd.get('feedHrs')) || 0, meds: fd.get('meds') === 'on', vax: fd.get('vax') === 'on', custom: keep.custom || '' } };
   });
-  onSave('#displayForm', fd => { S.settings = { ...S.settings, theme: fd.get('theme') || 'auto' }; });
+  onSave('#displayForm', fd => {
+    S.settings = { ...S.settings, theme: fd.get('theme') || 'auto' };
+    const l = fd.get('lang') || 'en';
+    if (l !== getLang()) { setLang(l); setTimeout(() => location.reload(), 300); }
+  });
   $('#syncForm')?.addEventListener('submit', onSyncSubmit);
   $('#clientIdForm')?.addEventListener('submit', async ev => {
     ev.preventDefault();
@@ -1956,6 +1968,7 @@ async function notify(key, title, body, go = '') {
   }
 }
 function handleGo(go) {
+  if (go.startsWith('stop:')) { const [, child, id] = go.split(':'); return stopFromNotification(child, id); }
   if (go === 'learn') openLearning();
   else if (go === 'doctor' || go === 'week') { S.view = go; route(); }
   else if (go === 'health') { S.view = 'health'; route(); }
@@ -2018,6 +2031,8 @@ function remindersSection() {
       <label>Feed reminder<select name="feedHrs">${[[0, 'Off'], [2, 'Every 2 hours'], [2.5, 'Every 2½ hours'], [3, 'Every 3 hours'], [3.5, 'Every 3½ hours'], [4, 'Every 4 hours']].map(([v, l]) => `<option value="${v}" ${Number(r.feedHrs) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       ${tog('meds', 'Medicines', 'When a prescribed medicine is due during an illness')}
       ${tog('vax', 'Vaccines', 'A week before a government-schedule vaccine is due')}
+      <div class="label">⏱ Running timers</div>
+      <label class="check"><input type="checkbox" id="runNotes" ${runNotesOn() ? 'checked' : ''}> <span><b>Show running timers in the notification bar</b><br><small class="muted">"😴 Nap since 13:00" with a ⏹ Stop button. Needs alarms turned on.</small></span></label>
       <button class="btn primary">Save</button>
     </form>
     <!--custom-->
@@ -2356,11 +2371,13 @@ async function monthSections() {
     <button class="btn primary" data-act="form" data-type="memory" data-first="1">＋ Add a new thing</button>` });
   out.push({ k: 'ei', icon: '💛', title: 'Feelings activity', sub: eiDone ? '✓ done today' : 'for today', html: `<p>${esc(ei)}</p><button class="btn ${eiDone ? '' : 'primary'}" data-act="eidone" data-text="${esc(ei)}" ${eiDone ? 'disabled' : ''}>${eiDone ? '✓ Done today' : 'We did it'}</button>` });
   out.push({ k: 'tip', icon: '🌱', title: 'Tip of the day', sub: tip.length > 34 ? tip.slice(0, 32) + '…' : tip, html: `<p>${esc(tip)}</p>` });
+  out.push({ k: 'card', icon: '📸', title: 'Month card', sub: 'Photo card to share', html: '' });
   out.push({ k: 'routine', icon: '🕒', title: 'Next in routine', sub: `${minToHm(nx.min)} · ${nx.label}`, html: `<p><b>${minToHm(nx.min)}</b> · ${esc(nx.label)}</p><button class="btn primary" data-act="view" data-view="routine">Open the timetable</button>` });
   return out;
 }
 async function openMonth(k = null) {
   const secs = await monthSections();
+  if (k === 'card') return openMonthCard();
   const sec = k && secs.find(x => x.k === k);
   if (sec) return openSheet(`<div class="sheet-hd"><button class="back" data-act="monthTile" data-k="">‹ This month</button><button class="icon-btn" data-act="close" aria-label="Close">✕</button></div>
     <h3>${sec.icon} ${esc(sec.title)}</h3>${sec.html}`, { focus: false });
@@ -2441,6 +2458,237 @@ async function openPattern(days = 7) {
     </tbody></table>
     <p class="muted small">Each row is one day, midnight to midnight. Tall purple blocks are sleep; thin bars are feeds, meals and play; dots are pee / poop. Days with nothing logged are left out of the averages. A steady pattern (similar wake-up, naps and bedtime each day) usually means good sleep habits.</p>`
     : '<p class="empty">Log sleep, feeds and play for a few days and the pattern appears here.</p>'}`, { focus: false });
+}
+
+// ------------------------------------------------------------------ RUNNING TIMER IN THE NOTIFICATION BAR
+// While a timer runs, the phone shows "😴 Nap since 13:00" with a ⏹ Stop button. Kept in step on every redraw.
+const runNotesOn = () => { try { return localStorage.getItem('hp-runnotes') !== '0'; } catch (e) { return true; } };
+async function syncRunNotes() {
+  if (!('Notification' in window) || Notification.permission !== 'granted' || !navigator.serviceWorker) return;
+  const reg = await navigator.serviceWorker.getRegistration().catch(() => null);
+  if (!reg?.getNotifications) return;
+  const prefix = `run-${S.child}-`;
+  const running = runNotesOn() ? (await db.all()).filter(e => typeInfo(e.type).timed && e.start && !e.end) : [];
+  const shown = (await reg.getNotifications()).filter(n => n.tag?.startsWith(prefix));
+  for (const n of shown) if (!running.some(e => n.tag === prefix + e.id)) n.close();
+  for (const e of running) {
+    if (shown.some(n => n.tag === prefix + e.id)) continue;
+    const t = typeInfo(e.type);
+    await reg.showNotification(`${t.icon} ${t.label}${e.data?.side ? ' · ' + e.data.side : ''} — ${S.settings.name}`, {
+      body: `Since ${fmtTime(e.start)}. Tap ⏹ Stop when it ends.`, tag: prefix + e.id, timestamp: e.start, silent: true, renotify: false,
+      requireInteraction: true, icon: 'icons/icon-192.png', data: { go: `stop:${S.child}:${e.id}` },
+      actions: [{ action: 'stop', title: '⏹ Stop' }],
+    }).catch(() => {});
+  }
+}
+async function stopFromNotification(childId, id) {
+  if (childId && childId !== S.child && S.children.some(c => c.id === childId)) await selectChild(childId);
+  const e = await db.get(id);
+  if (!e || e.end) { toast('That timer was already stopped'); return route(); }
+  S.view = 'home'; await route();
+  if (e.type === 'breastfeed') return toggleTimer('breastfeed', { stop: true });
+  return toggleTimer(e.type);
+}
+
+// ------------------------------------------------------------------ FOOD INTRODUCTION
+const ALLERGENS = [
+  ['egg', '🥚', 'Egg', ['egg', 'mutta', 'muttai', 'omelette']], ['dairy', '🥛', 'Dairy (curd, paneer, cheese)', ['curd', 'thayir', 'yogurt', 'yoghurt', 'paneer', 'cheese', 'butter', 'cow milk', 'buttermilk', 'mor']],
+  ['peanut', '🥜', 'Peanut', ['peanut', 'groundnut', 'verkadalai', 'kadalai']], ['nuts', '🌰', 'Tree nuts (badam, cashew)', ['almond', 'badam', 'cashew', 'mundhiri', 'walnut', 'pista']],
+  ['wheat', '🌾', 'Wheat (chapati, rava, bread)', ['wheat', 'chapati', 'roti', 'atta', 'rava', 'sooji', 'suji', 'upma', 'bread', 'semolina', 'godhumai']],
+  ['soy', '🫘', 'Soy', ['soy', 'soya', 'tofu']], ['fish', '🐟', 'Fish', ['fish', 'meen']], ['shellfish', '🦐', 'Prawn / crab', ['prawn', 'shrimp', 'eral', 'crab', 'nandu']],
+  ['sesame', '⚪', 'Sesame (ellu)', ['sesame', 'ellu', 'til', 'gingelly']],
+];
+const FIRST_FOODS = [
+  { max: 8, foods: ['Ragi porridge', 'Rice kanji', 'Moong dal water', 'Mashed banana', 'Apple puree (steamed)', 'Sweet potato mash', 'Carrot mash', 'Pumpkin mash', 'Mashed idli', 'Dal rice (mashed)', 'Papaya', 'Curd (thayir)'] },
+  { max: 10, foods: ['Khichdi', 'Soft idli', 'Soft dosa pieces', 'Rava upma', 'Ven pongal', 'Paneer', 'Egg yolk', 'Beetroot mash', 'Spinach dal', 'Chapati soaked in dal', 'Steamed pear', 'Fish (boneless, mashed)'] },
+  { max: 13, foods: ['Idiyappam', 'Whole egg (well cooked)', 'Vegetable rice (mashed)', 'Chicken soup', 'Puttu', 'Steamed kozhukattai', 'Sambar rice (mild)', 'Soft fruit pieces', 'Peanut powder in porridge', 'Sesame (ellu) powder', 'Curd rice', 'Wheat dosa'] },
+  { max: 999, foods: ['Family meals with less spice and salt', 'Millet dosa (ragi, kambu)', 'Sundal', 'Vegetable kurma with chapati', 'Fruit salad', 'Egg bhurji', 'Fish curry (boneless)', 'Lemon rice', 'Keerai poriyal', 'Paneer paratha'] },
+];
+const allergenOf = name => { const n = name.toLowerCase(); return ALLERGENS.find(a => a[3].some(w => n.includes(w))); };
+async function foodIntro() {
+  if (S.months < 5.5) return `<p class="ok-note">🥄 Solid foods usually start at <b>6 months</b>. Until then, breast milk (or formula) is all ${S.P.he} needs. This tab fills up once you log meals.</p>`;
+  const map = await db.getKV('foods', {}), today = dateKey();
+  const tried = Object.entries(map);
+  const status = ALLERGENS.map(a => {
+    const hits = tried.filter(([n]) => a[3].some(w => n.toLowerCase().includes(w))).sort((x, y) => x[1].first.localeCompare(y[1].first));
+    const react = hits.flatMap(([, f]) => f.reactions || []).filter(Boolean);
+    return { a, first: hits[0]?.[1].first, react };
+  });
+  const recent = tried.filter(([, f]) => f.first >= addDays(today, -2)).sort((x, y) => y[1].first.localeCompare(x[1].first))[0];
+  const band = FIRST_FOODS.find(b => S.months < b.max);
+  const triedNames = tried.map(([n]) => n.toLowerCase());
+  const STOP = new Set(['mashed', 'mash', 'soft', 'steamed', 'puree', 'pieces', 'water', 'whole', 'well', 'cooked', 'boneless', 'mild', 'soaked', 'family', 'meals', 'with', 'less']);
+  const core = f => f.toLowerCase().replace(/\(.*?\)/g, '').split(/\s+/).find(w => w.length > 2 && !STOP.has(w)) || f.toLowerCase();
+  const next = band.foods.filter(f => !triedNames.some(t => t.includes(core(f)))).slice(0, 8);
+  const favs = tried.filter(([, f]) => f.fav);
+  const day = recent ? Math.round((parseKey(today) - parseKey(recent[1].first)) / 86400000) + 1 : 0;
+  return `
+    ${recent ? `<section class="rcard c-food"><span class="ib">🔎</span><span class="rtext"><b>Day ${day} of 3: ${esc(recent[0])}</b><small>Watch for rash, swelling, vomiting or loose motions. Wait for day 3 before the next new food${allergenOf(recent[0]) ? ' — especially another allergy food' : ''}.</small></span></section>` : ''}
+    <div class="label">⚠️ Common allergy foods</div>
+    <section class="card allergen-card"><ul class="allergens">${status.map(s => `<li class="${s.react.length ? 'react' : s.first ? 'ok' : ''}">
+      <span class="ib">${s.a[1]}</span><span class="rtext"><b>${esc(s.a[2])}</b><small>${s.react.length ? `⚠️ Reaction noted: ${esc(s.react.join('; '))}` : s.first ? `✓ First tried ${esc(fmtDateShort(s.first))}` : 'Not tried yet'}</small></span></li>`).join('')}</ul>
+      <p class="muted small">Giving these early (around 6 months, once ${S.P.he} eats other foods well) can lower the chance of allergy. Give one at a time, a small amount in the morning, and repeat it a few times a week once tolerated. If there is bad eczema or a family allergy, ask your paediatrician first. Lip or face swelling, wheezing or repeated vomiting: call 108 / 112.</p></section>
+    ${favs.length ? `<div class="label">❤️ Favourites</div><section class="card"><div class="chips static">${favs.map(([n]) => `<button class="chip-btn picked" data-act="logFood" data-food="${esc(n)}">🍽️ ${esc(n)}</button>`).join('')}</div><p class="muted small">Tap to log it again.</p></section>` : ''}
+    <div class="label">🌱 Try next · Indian first foods for ${esc(ageText(S.settings.dob))}</div>
+    <section class="card"><div class="chips static">${next.map(f => `<button class="chip-btn" data-act="logFood" data-food="${esc(f)}">＋ ${esc(f)}</button>`).join('') || '<span class="muted small">Great variety! Keep repeating favourites and new textures.</span>'}</div>
+      <p class="muted small">Tap one to log it as a meal. Smooth mash first, then soft lumps, then soft finger pieces. No salt, sugar or honey before 1 year.</p></section>`;
+}
+
+// ------------------------------------------------------------------ TEETH CHART
+// 20 baby teeth. Typical ages (months) from the American Dental Association eruption chart.
+const TEETH = [
+  ['UR5', 'Upper right second molar', 25, 33], ['UR4', 'Upper right first molar', 13, 19], ['UR3', 'Upper right canine', 16, 22], ['UR2', 'Upper right lateral incisor', 9, 13], ['UR1', 'Upper right central incisor', 8, 12],
+  ['UL1', 'Upper left central incisor', 8, 12], ['UL2', 'Upper left lateral incisor', 9, 13], ['UL3', 'Upper left canine', 16, 22], ['UL4', 'Upper left first molar', 13, 19], ['UL5', 'Upper left second molar', 25, 33],
+  ['LL5', 'Lower left second molar', 23, 31], ['LL4', 'Lower left first molar', 14, 18], ['LL3', 'Lower left canine', 17, 23], ['LL2', 'Lower left lateral incisor', 10, 16], ['LL1', 'Lower left central incisor', 6, 10],
+  ['LR1', 'Lower right central incisor', 6, 10], ['LR2', 'Lower right lateral incisor', 10, 16], ['LR3', 'Lower right canine', 17, 23], ['LR4', 'Lower right first molar', 14, 18], ['LR5', 'Lower right second molar', 23, 31],
+];
+async function growTeeth() {
+  const st = await db.getKV('teeth', {});
+  const n = TEETH.filter(t => st[t[0]]).length;
+  const W = 300, cx = 150;
+  const pos = (i, upper) => { // 10 teeth on a half ellipse
+    const a = Math.PI * (0.1 + 0.8 * (i / 9)), rx = 118, ry = 78;
+    return [cx - rx * Math.cos(a), upper ? 116 - ry * Math.sin(a) : 134 + ry * Math.sin(a)];
+  };
+  const tooth = (t, i, upper) => {
+    const [x, y] = pos(i, upper), big = /molar/.test(t[1]), w = big ? 30 : 22, h = big ? 26 : 30, got = st[t[0]];
+    const due = !got && S.months >= t[2];
+    return `<g class="tooth ${got ? 'got' : due ? 'due' : ''}" data-act="toothTap" data-t="${t[0]}" role="button" aria-label="${esc(t[1])}">
+      <rect x="${x - w / 2}" y="${y - h / 2}" width="${w}" height="${h}" rx="${big ? 8 : 10}"/>${got ? `<text x="${x}" y="${y + 4}">✓</text>` : ''}</g>`;
+  };
+  const list = TEETH.filter(t => st[t[0]]).sort((a, b) => st[a[0]].localeCompare(st[b[0]]));
+  return `<p><b>${n} of 20</b> baby teeth so far. Tap a tooth when it comes through.</p>
+    <svg viewBox="0 0 ${W} 250" class="teeth-svg" role="img" aria-label="Teeth chart">
+      <text x="${cx}" y="16" class="tlab">Upper</text><text x="${cx}" y="246" class="tlab">Lower</text>
+      ${TEETH.slice(0, 10).map((t, i) => tooth(t, i, true)).join('')}
+      ${TEETH.slice(10).map((t, i) => tooth(t, 9 - i, false)).join('')}
+    </svg>
+    <div class="pg-legend"><span><i class="lg got"></i>Came through</span><span><i class="lg due"></i>Usually by now</span><span><i class="lg"></i>Later</span></div>
+    ${list.length ? `<section class="card"><div class="label">🦷 Dates</div><ul class="mini-list">${list.map(t => `<li><b>${esc(fmtDateShort(st[t[0]]))}</b> ${esc(t[1])}</li>`).join('')}</ul></section>` : ''}
+    <p class="muted small">Usual order: lower front teeth (6–10 months) → upper front (8–12) → side teeth → first molars (13–19) → canines (16–23) → back molars (23–33). Anywhere from 4 to 15 months for the first tooth is normal. Clean new teeth twice a day with a rice-grain smear of fluoride toothpaste; first dental visit by the first birthday. No tooth by 18 months? Mention it to your paediatrician.</p>`;
+}
+async function openTooth(id) {
+  const t = TEETH.find(x => x[0] === id); if (!t) return;
+  const st = await db.getKV('teeth', {});
+  openSheet(`<div class="sheet-hd"><h3>🦷 ${esc(t[1])}</h3><button class="icon-btn" data-act="close" aria-label="Close">✕</button></div>
+    <p class="muted">Usually comes through at ${t[2]}–${t[3]} months.</p>
+    <label>Date it came through<input type="date" id="toothDate" value="${esc(st[id] || dateKey())}" max="${dateKey()}"></label>
+    <div class="row actions">${st[id] ? '<button class="btn danger" data-act="toothDel" data-t="' + id + '">Not yet / remove</button>' : ''}<button class="btn primary" data-act="toothSave" data-t="${id}">✓ Save</button></div>`, { focus: false });
+}
+async function saveTooth(id, remove) {
+  const t = TEETH.find(x => x[0] === id), st = await db.getKV('teeth', {}), ids = await db.getKV('teethEntries', {});
+  if (ids[id]) { await db.del(ids[id]).catch(() => {}); delete ids[id]; }
+  if (remove) delete st[id];
+  else {
+    const d = $('#toothDate')?.value || dateKey(); st[id] = d;
+    const at = parseKey(d).getTime() + 12 * 3600000, e = { id: uid(), type: 'tooth', start: at, end: null, date: d, data: { which: t[1] }, note: '', by: S.settings.me, createdAt: Date.now() };
+    await db.put(e); ids[id] = e.id;
+  }
+  await db.setKV('teeth', st); await db.setKV('teethEntries', ids);
+  closeSheet(); toast(remove ? 'Removed' : `🦷 ${t[1]} saved`); route();
+}
+
+// ------------------------------------------------------------------ AMMA'S WELLBEING (kept once for the family, not per child)
+const MOODS = [['😢', 'Very low'], ['😟', 'Low'], ['😐', 'Okay'], ['🙂', 'Good'], ['😄', 'Great']];
+const MOM_BODY = ['No pain', 'Back pain', 'Stitches / wound pain', 'Breast pain or lump', 'Headache', 'Heavy bleeding', 'Fever', 'Feeling dizzy'];
+async function renderMom() {
+  const log = await mainDb.getKV('mom', {}), today = dateKey(), t = log[today] || {};
+  const days = [...Array(14)].map((_, i) => addDays(today, i - 13));
+  const low = days.filter(d => log[d]?.mood != null && log[d].mood <= 1).length;
+  const tips = [];
+  if (t.sleep != null && t.sleep < 2) tips.push('😴 Very little sleep. Nap when the baby naps, and ask Appa or Paati to take one night feed or the early morning.');
+  if (t.water != null && t.water < 8) tips.push('💧 Breastfeeding needs a lot of water: about 3 litres (12 glasses) a day. Keep a bottle where you usually feed.');
+  if (t.ate === false) tips.push('🍲 Eat something warm and simple: a bowl of rice and dal, eggs, fruit and nuts within reach.');
+  if (t.metime === false) tips.push('🌿 Take 15 minutes just for yourself today: a bath, a walk, music or a call with a friend.');
+  const red = (t.body || []).filter(b => ['Heavy bleeding', 'Fever', 'Headache', 'Feeling dizzy', 'Breast pain or lump'].includes(b));
+  const sel = (n, v, opts) => opts.map(([val, lab]) => `<button type="button" class="chip-btn ${t[n] === val ? 'picked' : ''}" data-act="momSet" data-k="${n}" data-v="${val}">${lab}</button>`).join('');
+  main().innerHTML = `${backBar()}<h2>💗 Amma's wellbeing</h2>
+    <p class="muted">A one-minute check-in for you. Looking after yourself is looking after the baby too. Saved for the family, not for one child.</p>
+    <section class="card mom-card"><div class="label">Today · ${esc(fmtDateLong(today))}</div>
+      <p><b>How are you feeling?</b></p><div class="moods">${MOODS.map(([e, l], i) => `<button type="button" class="mood ${t.mood === i ? 'picked' : ''}" data-act="momSet" data-k="mood" data-v="${i}" aria-label="${l}"><span>${e}</span><small>${l}</small></button>`).join('')}</div>
+      <p><b>Sleep last night</b></p><div class="chips static">${sel('sleep', null, [[0, 'Under 3 h'], [1, '3–5 h'], [2, '5–7 h'], [3, '7 h +']])}</div>
+      <p><b>Water today</b> · ${t.water || 0} glasses</p><div class="row"><button type="button" class="btn small" data-act="momWater" data-d="-1">−</button><div class="water-bar"><i style="width:${Math.min(100, (t.water || 0) / 12 * 100)}%"></i></div><button type="button" class="btn small primary" data-act="momWater" data-d="1">＋ glass</button></div>
+      <p><b>Body</b></p><div class="chips static">${MOM_BODY.map(b => `<button type="button" class="chip-btn ${(t.body || []).includes(b) ? 'picked' : ''}" data-act="momBody" data-v="${esc(b)}">${esc(b)}</button>`).join('')}</div>
+      <p><b>Did you…</b></p><div class="chips static">${sel('ate', null, [[true, '🍲 Eat well'], [false, 'Skipped meals']])}${sel('metime', null, [[true, '🌿 Had some me-time'], [false, 'No time for me']])}</div>
+    </section>
+    ${red.length ? `<section class="rcard c-health"><span class="ib">🩺</span><span class="rtext"><b>Please see your doctor soon</b><small>${esc(red.join(', '))} after delivery should be checked by a doctor. Very heavy bleeding (soaking a pad an hour), high fever, a bad headache with blurred vision, or chest pain: call 108 / 112 now.</small></span></section>` : ''}
+    ${low >= 3 ? `<section class="rcard c-feel"><span class="ib">🤝</span><span class="rtext"><b>You've felt low on ${low} of the last 14 days</b><small>Low mood after a baby is common and treatable. Please tell Appa or someone close, and talk to your doctor. Free, confidential support any time: Tele-MANAS 14416.</small></span></section>` : ''}
+    ${tips.length ? `<section class="card"><div class="label">🌱 For today</div>${tips.map(x => `<p class="small">${esc(x)}</p>`).join('')}</section>` : ''}
+    <section class="card"><div class="label">Last 14 days</div><div class="mood-strip">${days.map(d => `<span title="${esc(fmtDateShort(d))}"><b>${log[d]?.mood != null ? MOODS[log[d].mood][0] : '·'}</b><small>${parseKey(d).getDate()}</small></span>`).join('')}</div></section>
+    <p class="muted small">If you ever feel hopeless, can't stop crying, or have thoughts of harming yourself or the baby, please call <b>Tele-MANAS 14416</b> (free, 24×7) or <b>112</b> right away. This page is general guidance; your doctor knows you best.</p>`;
+}
+async function momUpdate(fn) {
+  const log = await mainDb.getKV('mom', {}), today = dateKey();
+  log[today] = fn({ ...(log[today] || {}) }); log[today].at = Date.now();
+  await mainDb.setKV('mom', log); route();
+}
+
+// ------------------------------------------------------------------ MONTH PHOTO CARD
+async function monthPhotos() {
+  const today = dateKey(), from = today.slice(0, 8) + '01';
+  const ents = (await db.range(from, today)).filter(e => e.data?.photos?.length).sort((a, b) => b.start - a.start);
+  return [...new Set(ents.flatMap(e => e.data.photos))].slice(0, 12);
+}
+async function drawMonthCard(photoId) {
+  const s = S.settings, th = S.theme, today = dateKey(), from = today.slice(0, 8) + '01';
+  const news = (await db.range(from, today)).filter(e => e.type === 'memory').sort((a, b) => a.start - b.start).map(e => e.data?.text || e.note).filter(Boolean);
+  const ms = Object.values(await db.getKV('milestones', {})).filter(d => typeof d === 'string' && d >= from).length;
+  const teeth = Object.keys(await db.getKV('teeth', {})).length;
+  const g = (await db.byType('growth')).sort((a, b) => b.start - a.start).find(e => e.data?.weight);
+  const c = document.createElement('canvas'); c.width = 1080; c.height = 1350;
+  const x = c.getContext('2d');
+  const bg = x.createLinearGradient(0, 0, 1080, 1350); bg.addColorStop(0, th.hero?.[0] || '#fff1e6'); bg.addColorStop(1, th.hero?.[1] || '#ffe4ec');
+  x.fillStyle = bg; x.fillRect(0, 0, 1080, 1350);
+  const font = (w, px) => `${w} ${px}px Nunito, "Noto Sans Tamil", system-ui, sans-serif`;
+  x.fillStyle = th.accent || '#6f5cf0'; x.font = font(800, 76); x.textAlign = 'center';
+  x.fillText(`${s.name} · ${ageText(s.dob)}`, 540, 120);
+  x.fillStyle = '#4a3f5c'; x.font = font(700, 40);
+  x.fillText(`${th.emoji}  ${th.name}  ·  ${new Date().toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}`, 540, 182);
+  // photo
+  const py = 230, ph = 640, pw = 880, px = 100;
+  x.save(); x.beginPath(); x.roundRect(px, py, pw, ph, 48); x.clip();
+  let drew = false;
+  if (photoId) {
+    const p = await db.getPhoto(photoId);
+    if (p?.data) {
+      const img = await new Promise(r => { const i = new Image(); i.onload = () => r(i); i.onerror = () => r(null); i.src = p.data; });
+      if (img) { const k = Math.max(pw / img.width, ph / img.height); x.drawImage(img, px + (pw - img.width * k) / 2, py + (ph - img.height * k) / 2, img.width * k, img.height * k); drew = true; }
+    }
+  }
+  if (!drew) { x.fillStyle = 'rgba(255,255,255,.6)'; x.fillRect(px, py, pw, ph); x.font = font(400, 260); x.fillText(th.emoji, 540, py + ph / 2 + 90); }
+  x.restore();
+  // facts
+  x.textAlign = 'left'; let y = 950;
+  x.fillStyle = '#2d2540'; x.font = font(800, 44); x.fillText('✨ New this month', 100, y); y += 58;
+  x.font = font(600, 36);
+  const lines = news.length ? news.slice(0, 4) : ['Growing, learning and loved every day'];
+  for (const l of lines) { let t = '• ' + l; while (x.measureText(t).width > 880 && t.length > 4) t = t.slice(0, -2); if (t !== '• ' + l) t += '…'; x.fillText(t, 100, y); y += 50; }
+  const facts = [ms ? `🎯 ${ms} milestone${ms === 1 ? '' : 's'}` : '', teeth ? `🦷 ${teeth} teeth` : '', g ? `⚖️ ${g.data.weight} kg` : ''].filter(Boolean).join('    ');
+  if (facts) { x.fillStyle = th.accent || '#6f5cf0'; x.font = font(800, 40); x.fillText(facts, 100, Math.max(y + 20, 1250)); }
+  x.fillStyle = '#8a819c'; x.font = font(600, 28); x.textAlign = 'right'; x.fillText('Happy Parenthood', 980, 1310);
+  return c;
+}
+async function openMonthCard(photoId) {
+  const photos = await monthPhotos();
+  const pick = photoId ?? photos[0] ?? null;
+  S.cardPhoto = pick;
+  openSheet(`<div class="sheet-hd"><button class="back" data-act="monthTile" data-k="">‹ This month</button><button class="icon-btn" data-act="close" aria-label="Close">✕</button></div>
+    <h3>📸 Month card</h3><div id="cardPrev" class="card-prev"><p class="muted small">Making the card…</p></div>
+    ${photos.length ? `<p class="small"><b>Choose a photo</b> (from this month's entries)</p><div class="thumbs pick">${photos.map(id => `<button class="pickph ${id === pick ? 'on' : ''}" data-act="cardPhoto" data-id="${esc(id)}"><img data-photo="${esc(id)}" alt="Photo"></button>`).join('')}</div>`
+      : `<p class="muted small">No photos this month yet. Add a photo to any entry (for example ✨ New today) and it will appear here.</p>`}
+    <div class="row actions"><button class="btn" data-act="cardSave">⬇️ Save</button><button class="btn primary" data-act="cardShare">📤 Share</button></div>`, { focus: false });
+  const c = await drawMonthCard(pick);
+  const box = $('#cardPrev'); if (box) box.innerHTML = `<img src="${c.toDataURL('image/jpeg', 0.85)}" alt="Month card">`;
+  S.cardCanvas = c;
+}
+async function shareMonthCard(download) {
+  const c = S.cardCanvas || await drawMonthCard(S.cardPhoto);
+  const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.9));
+  const name = `${(S.settings.name || 'baby').replace(/\W+/g, '-')}-${dateKey().slice(0, 7)}.jpg`;
+  const file = new File([blob], name, { type: 'image/jpeg' });
+  if (!download && navigator.canShare?.({ files: [file] })) { try { await navigator.share({ files: [file], title: `${S.settings.name} this month` }); return; } catch (e) { if (e.name === 'AbortError') return; } }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  toast('⬇️ Card saved to your phone');
 }
 
 // ------------------------------------------------------------------ events
@@ -2549,6 +2797,17 @@ async function handleClick(el, a, ev) {
     }
     case 'driveSignOut': if (confirm('Sign out of Google Drive backup on this phone? Your data stays on the phone and in Drive.')) { await driveSignOut(); setBackends({ drive: false }); route(); } break;
     case 'glanceFilter': openGlance(el.dataset.f); break;
+    case 'toothTap': openTooth(el.dataset.t); break;
+    case 'toothSave': await saveTooth(el.dataset.t, false); break;
+    case 'toothDel': await saveTooth(el.dataset.t, true); break;
+    case 'logFood': openForm('meal', null, { prefill: { data: { foods: [{ name: el.dataset.food, qty: '', unit: '' }] } }, noFocus: true }); break;
+    case 'foodFav': { const m = await db.getKV('foods', {}); if (m[el.dataset.food]) { m[el.dataset.food].fav = !m[el.dataset.food].fav; await db.setKV('foods', m); route(); } break; }
+    case 'momSet': { const k = el.dataset.k, raw = el.dataset.v, v = raw === 'true' ? true : raw === 'false' ? false : Number(raw); await momUpdate(t => ({ ...t, [k]: t[k] === v ? undefined : v })); break; }
+    case 'momWater': await momUpdate(t => ({ ...t, water: Math.max(0, (t.water || 0) + Number(el.dataset.d)) })); break;
+    case 'momBody': { const b = el.dataset.v; await momUpdate(t => { let l = t.body || []; l = l.includes(b) ? l.filter(x => x !== b) : b === 'No pain' ? ['No pain'] : [...l.filter(x => x !== 'No pain'), b]; return { ...t, body: l }; }); break; }
+    case 'cardPhoto': openMonthCard(el.dataset.id); break;
+    case 'cardSave': await shareMonthCard(true); break;
+    case 'cardShare': await shareMonthCard(false); break;
     case 'homeSheet': openHomeSheet(el.dataset.k); break;
     case 'monthTile': openMonth(el.dataset.k || null); break;
     case 'patternDays': openPattern(Number(el.dataset.days)); break;
