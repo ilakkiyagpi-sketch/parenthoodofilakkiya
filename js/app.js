@@ -1489,7 +1489,7 @@ async function renderSettings() {
       <p class="muted small">The colours change automatically every month until the first birthday, then with each age stage.</p>
       <button class="btn primary">Save</button></form>`;
   if (tab === 'backup') body = await backupSection();
-  if (tab === 'reminders') body = remindersSection().replace('<!--alarm-->', await alarmCard());
+  if (tab === 'reminders') body = remindersSection().replace('<!--alarm-->', await alarmCard()).replace('<!--custom-->', await customCard());
   if (tab === 'data') body = `<section class="card"><div class="label">Data on this phone for ${esc(s.name)}: ${(await db.all()).length} entries</div>
       <div class="row wrap"><button class="btn" data-act="export">⬇️ Backup file</button><button class="btn" data-act="csv">⬇️ Export CSV</button>
       <label class="btn">⬆️ Restore file<input type="file" id="importFile" accept="application/json" hidden></label></div>
@@ -1508,10 +1508,20 @@ async function renderSettings() {
     const caregivers = String(fd.get('caregivers')).split(',').map(x => x.trim()).filter(Boolean);
     S.settings = { ...S.settings, caregivers: caregivers.length ? caregivers : ['Parent'], me: caregivers.includes(fd.get('me')) ? fd.get('me') : caregivers[0], voiceLang: fd.get('voiceLang') || 'en-IN' };
   });
+  $('#customForm')?.addEventListener('submit', async ev => {
+    ev.preventDefault();
+    const fd = new FormData(ev.target), hm = fd.get('t'), what = String(fd.get('what') || '').trim().replace(/\s+/g, ' ');
+    if (!/^\d{2}:\d{2}$/.test(hm || '')) return toast('Pick a time first');
+    if (!what) return toast('Type what the reminder is for');
+    const list = customList();
+    if (list.some(x => x.hm === hm && x.text.toLowerCase() === what.toLowerCase())) return toast('That reminder is already in the list');
+    await saveCustom([...list, { hm, text: what }]);
+    toast(`✅ Added: ${what} · rings every day at ${hm}`);
+  });
   onSave('#remForm', async fd => {
     const { on, ...keep } = remCfg();
     S.settings = { ...S.settings, rem: { ...keep, learn: fd.get('learn') === 'on', learnAt: fd.get('learnAt') || '09:00', nap: fd.get('nap') === 'on',
-      feedHrs: Number(fd.get('feedHrs')) || 0, meds: fd.get('meds') === 'on', vax: fd.get('vax') === 'on', custom: fd.get('custom') || '' } };
+      feedHrs: Number(fd.get('feedHrs')) || 0, meds: fd.get('meds') === 'on', vax: fd.get('vax') === 'on', custom: keep.custom || '' } };
   });
   onSave('#displayForm', fd => { S.settings = { ...S.settings, theme: fd.get('theme') || 'auto' }; });
   $('#syncForm')?.addEventListener('submit', onSyncSubmit);
@@ -2065,10 +2075,9 @@ function remindersSection() {
       <label>Feed reminder<select name="feedHrs">${[[0, 'Off'], [2, 'Every 2 hours'], [2.5, 'Every 2½ hours'], [3, 'Every 3 hours'], [3.5, 'Every 3½ hours'], [4, 'Every 4 hours']].map(([v, l]) => `<option value="${v}" ${Number(r.feedHrs) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       ${tog('meds', 'Medicines', 'When a prescribed medicine is due during an illness')}
       ${tog('vax', 'Vaccines', 'A week before a government-schedule vaccine is due')}
-      <div class="label">⏰ My own daily reminders</div>
-      <label>One per line: time and what<textarea name="custom" rows="3" placeholder="08:00 Vitamin D drops&#10;17:30 Evening walk">${esc(r.custom || '')}</textarea></label>
       <button class="btn primary">Save</button>
     </form>
+    <!--custom-->
     <p class="muted small">Nap, feed and medicine reminders follow what you log, so they update each time you open the app.</p>`;
 }
 
@@ -2298,6 +2307,41 @@ async function testAlarm() {
   await notify('test', `📚 Learning time for ${S.settings.name}`, `${p.type} · try “${p.books[0][0]}”`, 'learn');
   delete fired.test;
 }
+// "My own daily reminders": stored as lines "HH:MM what" in settings.rem.custom, shown as rows.
+function customList() {
+  return String(remCfg().custom || '').split('\n').map(l => l.trim().match(/^(\d{1,2})[:.](\d{2})\s*(.*)$/)).filter(Boolean)
+    .map(m => ({ hm: `${m[1].padStart(2, '0')}:${m[2]}`, text: m[3] || 'Reminder' })).sort((a, b) => a.hm.localeCompare(b.hm));
+}
+async function saveCustom(list) {
+  const { on, ...keep } = remCfg();
+  S.settings = { ...S.settings, rem: { ...keep, custom: list.sort((a, b) => a.hm.localeCompare(b.hm)).map(x => `${x.hm} ${x.text}`).join('\n') } };
+  await db.setKV('settings', S.settings);
+  await syncBell(true).catch(() => {});
+  await route();
+}
+const nextRing = hm => {
+  const now = new Date(), t = new Date(); t.setHours(0, hmToMin(hm), 0, 0);
+  return t > now ? `today at ${hm}` : `tomorrow at ${hm}`;
+};
+async function customCard() {
+  const list = customList(), r = remCfg(), on = alarmsOn(), closed = on && await bellConnected();
+  const status = !on ? '🔕 Turn on alarms above to hear it' : closed ? '🔔 Rings even when the app is closed' : '🔔 Rings while the app is open';
+  const row = (icon, hm, text, sub, i) => `<li class="${on ? 'on' : 'off'}"><span class="rt">${hm}</span><span class="rx"><b>${icon} ${esc(text)}</b><small>${esc(sub)}</small></span>${i != null ? `<button class="icon-btn" data-act="remDel" data-i="${i}" aria-label="Remove ${esc(text)}">✕</button>` : ''}</li>`;
+  return `<div class="label">⏰ My daily reminders</div>
+    <section class="card rem-list-card">
+      <ul class="rem-list">
+        ${[...(r.learn ? [{ hm: r.learnAt, learn: true }] : []), ...list.map((x, i) => ({ ...x, i }))].sort((x, y) => x.hm.localeCompare(y.hm))
+          .map(x => x.learn ? row('📚', x.hm, 'Learning time', `Every day · next ${nextRing(x.hm)} · change the time above`) : row('⏰', x.hm, x.text, `Every day · next ${nextRing(x.hm)}`, x.i)).join('')}
+      </ul>
+      ${!list.length ? '<p class="muted small">No reminders of your own yet. Add one below, for example Vitamin D drops or book time.</p>' : ''}
+      <p class="small rem-status ${on ? 'ok' : ''}">${status}</p>
+      <form id="customForm" class="add-rem">
+        <input type="time" name="t" value="21:00" aria-label="Time" required>
+        <input name="what" placeholder="What? e.g. Book time" maxlength="60" aria-label="What to remind" required>
+        <button class="btn primary">＋ Add</button>
+      </form>
+    </section>`;
+}
 async function alarmCard() {
   const on = alarmsOn(), closed = on && await bellConnected();
   const blocked = 'Notification' in window && Notification.permission === 'denied';
@@ -2381,6 +2425,13 @@ async function handleClick(el, a, ev) {
     case 'print': window.print(); break;
     case 'alarmsOn': closeSheet(); await turnOnAlarms(); break;
     case 'alarmsOff': await turnOffAlarms(); break;
+    case 'remDel': {
+      const list = customList(), it = list[Number(el.dataset.i)];
+      if (!it || !confirm(`Remove the reminder "${it.text}" at ${it.hm}?`)) break;
+      await saveCustom(list.filter((_, i) => i !== Number(el.dataset.i)));
+      toast('Reminder removed');
+      break;
+    }
     case 'alarmTest': await testAlarm(); break;
     case 'shareDoc': shareText(main().querySelector('.doc-sheet').innerText.replace(/\n{3,}/g, '\n\n'), 'Doctor visit summary'); break;
     case 'shareWeek': shareText(main().innerText.replace(/Share with family|‹ More/g, '').replace(/\n{3,}/g, '\n\n').trim(), `${S.settings.name}'s week`); break;
