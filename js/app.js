@@ -339,15 +339,10 @@ async function renderHome() {
   const btns = quickForAge().filter(q => (CAT[q.k] || 'feel') === S.homeCat);
   const otherRunning = running.filter(e => (CAT[e.type] || 'feel') !== S.homeCat);
 
+  // Order (the family's choice): last feed → next in routine → categories → buttons → everything else → voice last
   main().innerHTML = `
-    ${banner}
-    ${await installNudge()}
-    <button class="rcard c-feel voice-row" data-act="voice"><span class="ib">🎤</span><span class="rtext"><b>Tell me what happened</b><small>“Ate 4 spoons of ragi at 8 and napped for an hour”</small></span><span class="chev" aria-hidden="true">›</span></button>
-    ${await weekBanner()}
     ${await lastFeedStrip()}
-    ${await wakeStrip()}
     ${await routineRow()}
-    ${await todayStrip()}
     <div class="cats" role="tablist" aria-label="Categories">
       ${cats.map(c => { const n = running.filter(e => (CAT[e.type] || 'feel') === c.k).length; return `<button class="cat c-${c.k}" role="tab" data-act="homeCat" data-cat="${c.k}" aria-selected="${c.k === S.homeCat}"><span class="ci">${c.icon}</span><span class="cl">${c.label}</span>${n ? '<i class="dot" aria-label="timer running"></i>' : ''}</button>`; }).join('')}
       <button class="cat all" data-act="openPicker"><span class="ci">＋</span><span class="cl">All</span></button>
@@ -355,10 +350,16 @@ async function renderHome() {
     <section class="big2">${btns.map(q => quickBtn(q, running, sm)).join('')}</section>
     ${otherRunning.map(e => `<div class="run-pill c-${CAT[e.type] || 'feel'}"><span>${typeInfo(e.type).icon} <b>${esc(typeInfo(e.type).label)}</b> <span data-since="${e.start}">${fmtDur(entryMinutes(e))}</span></span>
       <button class="pill-btn" data-act="toggle" data-type="${e.type}">Stop</button></div>`).join('')}
+    ${await wakeStrip()}
     <section class="glance" aria-label="Today at a glance">${glanceForAge(sm)}</section>
+    ${await todayStrip()}
+    ${banner}
+    ${await weekBanner()}
     ${tipRow()}
     ${homeMoreButtons()}
-    <p class="muted small center">Today's full timeline is in <button class="linkish" data-act="view" data-view="diary">📒 Diary</button>.</p>`;
+    ${await installNudge()}
+    <p class="muted small center">Today's full timeline is in <button class="linkish" data-act="view" data-view="diary">📒 Diary</button>.</p>
+    <button class="rcard c-feel voice-row" data-act="voice"><span class="ib">🎤</span><span class="rtext"><b>Tell me what happened</b><small>“Ate 4 spoons of ragi at 8 and napped for an hour”</small></span><span class="chev" aria-hidden="true">›</span></button>`;
 }
 
 function quickBtn(q, running, sm) {
