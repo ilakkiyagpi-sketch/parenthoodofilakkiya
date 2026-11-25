@@ -1,5 +1,5 @@
 // Offline support: cache the app shell, serve it when offline, refresh in background.
-const CACHE = 'happy-parenthood-v19';
+const CACHE = 'happy-parenthood-v21';
 const SHELL = ['./', 'index.html', 'css/styles.css', 'js/app.js', 'js/db.js', 'js/util.js', 'js/catalog.js', 'js/stages.js', 'js/guide.js', 'js/charts.js', 'js/sync.js', 'js/photos.js', 'js/voice.js', 'js/devdata.js', 'js/growth.js', 'js/who-data.js', 'js/pronouns.js', 'js/drive.js', 'js/config.js', 'js/assistant.js', 'js/assistant-kb.js', 'js/learning.js', 'js/i18n.js',
   'manifest.webmanifest', 'icons/favicon-64.png', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/apple-touch-icon.png'];
 
