@@ -500,3 +500,40 @@ body:not(.onboarding) { background: transparent; }
 body:has(.selbar) .main { padding-bottom: 150px; }
 li.picked .tl-body, .entries li.picked { outline: 3px solid var(--high); outline-offset: -1px; }
 li.picked .tl-body::before, .entries li.picked .e-body::before { content: "✓ selected"; color: var(--high); font-weight: 800; font-size: .72rem; display: block; }
+
+/* ---------- wake window, learning time, doctor summary, weekly report ---------- */
+.wake-strip { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 10px; background: var(--c-sleep); border-radius: 14px; padding: 8px 12px; margin: 8px 0; font-size: .88rem; }
+.wake-strip.due { background: var(--low-bg); color: var(--low); }
+.wake-strip.over { background: var(--high-bg); color: var(--high); }
+.learn-card { background: var(--c-learn); border-color: transparent; }
+.learn-list { display: grid; gap: 8px; margin: 8px 0; }
+.learn-list .li { display: flex; gap: 10px; align-items: flex-start; background: var(--c-learn); border-radius: 14px; padding: 10px 12px; font-size: .92rem; overflow-wrap: anywhere; }
+.learn-list .li.ei { background: var(--c-feel); }
+.learn-list .li > span { font-size: 1.4rem; line-height: 1; }
+.learn-list .btn { margin-top: 6px; }
+.rem-form .check { display: flex; gap: 10px; align-items: flex-start; margin: 8px 0; }
+.rem-form .check.big { background: var(--accent-soft); border-radius: 14px; padding: 10px; }
+.rem-form .label { margin-top: 14px; }
+.qs { list-style: none; padding: 0; margin: 6px 0; }
+.qs li { display: flex; justify-content: space-between; align-items: center; gap: 6px; border-bottom: 1px dashed var(--border); padding: 4px 0; }
+.qs li.done span { text-decoration: line-through; color: var(--muted); }
+#qForm { gap: 6px; margin-top: 6px; }
+#qForm input { flex: 1; min-width: 0; }
+.week-table .up { color: var(--ok); font-size: .8em; }
+.week-table .down { color: var(--high); font-size: .8em; }
+.week-table td:first-child { white-space: nowrap; }
+.week-banner { background: var(--accent-soft); border-color: transparent; }
+@media print {
+  .hdr, .tabs, .no-print, .toast, .sheet { display: none !important; }
+  body { background: #fff !important; color: #000; }
+  body::before, body::after { display: none !important; }
+  .main { padding: 0 !important; max-width: none; }
+  .card { box-shadow: none !important; border: 1px solid #ccc !important; background: #fff !important; break-inside: avoid; }
+}
+body.locked .toast { top: calc(10px + env(safe-area-inset-top)); bottom: auto; }
+.rem-form input[type=checkbox]:checked + span { color: inherit; text-decoration: none; }
+.alarm-card { text-align: center; background: var(--accent-soft); border-color: transparent; }
+.alarm-card.on { text-align: left; background: var(--ok-bg); }
+.alarm-card .alarm-big { font-size: 2.6rem; line-height: 1; margin-bottom: 4px; }
+.alarm-card .btn.wide { width: 100%; font-size: 1.05rem; padding: 14px; }
+.alarm-card .warn { color: var(--high); }
