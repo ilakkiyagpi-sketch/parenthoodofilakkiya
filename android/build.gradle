@@ -1,0 +1,5 @@
+// Happy Parenthood Android app: a Trusted Web Activity that opens the web app full screen
+// (same data, same Google sign-in, same alarms) plus a home-screen quick-buttons widget.
+plugins {
+    id 'com.android.application' version '8.7.3' apply false
+}

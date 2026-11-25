@@ -1,0 +1,39 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'io.github.ilakkiyagpisketch.happyparenthood'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'io.github.ilakkiyagpisketch.happyparenthood'
+        minSdk 21
+        targetSdk 35
+        // GitHub sets these on every build so each new app file can update the old one
+        versionCode((System.getenv('VERSION_CODE') ?: '1') as int)
+        versionName(System.getenv('VERSION_NAME') ?: '1.0')
+    }
+
+    signingConfigs {
+        release {
+            // The signing key is kept as a GitHub secret, never in the code
+            storeFile file(System.getenv('KEYSTORE_PATH') ?: 'not-set.jks')
+            storePassword System.getenv('KEYSTORE_PASSWORD')
+            keyAlias 'happyparenthood'
+            keyPassword System.getenv('KEYSTORE_PASSWORD')
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'com.google.androidbrowserhelper:androidbrowserhelper:2.5.0'
+}
