@@ -23,6 +23,7 @@ A personal, offline-first parenting PWA built for one family (Amma/Appa) in Tami
 | `js/voice.js` | Speech-to-text (Web Speech API) + English sentence → log-entry parser |
 | `js/learning.js` | Wake windows by age, learning-time ideas (reading types, books, materials, Tamil/English rhymes) by age band |
 | `bell/worker.js`, `bell/README.md` | Owner-run Cloudflare Worker ("bell"): D1 database bound as `DB` (tables auto-created), cron every minute sends an empty Web Push (VAPID keys auto-made) to phones with a reminder due; `sw.js` then fetches `/due` and shows it. Address goes in `BELL_URL` in `js/config.js` |
+| `js/i18n.js` | Tamil interface (per phone, `hp-lang`): dictionary of UI strings applied to text nodes as screens render (MutationObserver). Long content stays English. Add new UI strings here |
 | `js/photos.js` | Photo compression (≤1280 px JPEG) stored in IndexedDB |
 | `js/pronouns.js` | he/she wording per child (rewrites content objects in place) |
 | `js/db.js` | IndexedDB: one database per child (`parenthood`, `parenthood-<childId>`); change queues for Sheet (`dirty`) and Drive (`driveDirty`) |
@@ -41,8 +42,10 @@ A personal, offline-first parenting PWA built for one family (Amma/Appa) in Tami
 - Chatbot: user chose the **free offline assistant** for now. If AI is added later, keep it optional and keep the API key out of the browser (Apps Script or Cloudflare Worker proxy).
 - Backup: **Sign in with Google → Drive**. The Google Cloud project is in "Testing" mode with the family's Gmail accounts as test users ("External" audience because personal Gmail can't use "Internal"). A browser token lasts about 1 h, so the ☁️ badge shows "Tap to sync" when it expires.
 - Reminders: **one button for users** ("🔔 Turn on alarms", on/off stored per phone). The owner runs the Cloudflare bell backend; no setup steps shown in the app. In-app timers alone can't ring a closed PWA.
+- Running timers show in the phone's notification bar with a ⏹ Stop action (`syncRunNotes()` after each render; Stop opens `?go=stop:<child>:<id>`).
+- Foods tab: allergy foods (9), 3-day watch, favourites, Indian "try next" foods by age. Teeth chart (Grow → Teeth, 20 baby teeth, ADA ages). Amma's wellbeing (More; stored once in the main database kv `mom`; Tele-MANAS 14416 / 108 / 112). Month photo card (This month → Month card; canvas 1080×1350, share/save).
 - Settings split into sections. Several children are switched by tapping the name in the header.
 
 ## Ideas mentioned but not built yet
 - Favourite meals / food 'try next' list, shared live view for both parents.
-- Tamil sentences in voice logging (currently saved as notes); optional AI "Ask" fallback.
+- Tamil for long content (guide, milestones, tips); Tamil sentences in voice logging (currently saved as notes); optional AI "Ask" fallback; live sync between phones; smarter personal nap prediction.
