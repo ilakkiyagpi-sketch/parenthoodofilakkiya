@@ -22,6 +22,7 @@ A personal, offline-first parenting PWA built for one family (Amma/Appa) in Tami
 | `js/assistant-kb.js`, `js/assistant.js` | Offline "Ask" assistant (no AI): ~100 Q&A, synonym/Tanglish matching, emergency detection, personal answers from logs via `askContext()` in app.js |
 | `js/voice.js` | Speech-to-text (Web Speech API) + English sentence → log-entry parser |
 | `js/learning.js` | Wake windows by age, learning-time ideas (reading types, books, materials, Tamil/English rhymes) by age band |
+| `bell/worker.js` | Family's own Cloudflare Worker ("bell"): stores reminder times per phone in KV `BELL`, cron every minute sends an empty Web Push (VAPID keys auto-made); `sw.js` then fetches `/due` and shows the notification |
 | `js/photos.js` | Photo compression (≤1280 px JPEG) stored in IndexedDB |
 | `js/pronouns.js` | he/she wording per child (rewrites content objects in place) |
 | `js/db.js` | IndexedDB: one database per child (`parenthood`, `parenthood-<childId>`); change queues for Sheet (`dirty`) and Drive (`driveDirty`) |
@@ -38,6 +39,7 @@ A personal, offline-first parenting PWA built for one family (Amma/Appa) in Tami
 - Physical growth: first-year month-by-month checks + WHO comparison charts + standard-readings table.
 - Chatbot: user chose the **free offline assistant** for now. If AI is added later, keep it optional and keep the API key out of the browser (Apps Script or Cloudflare Worker proxy).
 - Backup: **Sign in with Google → Drive**. The Google Cloud project is in "Testing" mode with the family's Gmail accounts as test users ("External" audience because personal Gmail can't use "Internal"). A browser token lasts about 1 h, so the ☁️ badge shows "Tap to sync" when it expires.
+- Reminders: user chose the **free Cloudflare bell** (real notifications from the app when closed). In-app timers alone can't ring a closed PWA.
 - Settings split into sections. Several children are switched by tapping the name in the header.
 
 ## Ideas mentioned but not built yet

@@ -1466,7 +1466,7 @@ async function renderSettings() {
       <p class="muted small">The colours change automatically every month until the first birthday, then with each age stage.</p>
       <button class="btn primary">Save</button></form>`;
   if (tab === 'backup') body = await backupSection();
-  if (tab === 'reminders') body = remindersSection();
+  if (tab === 'reminders') body = remindersSection().replace('<!--bell-->', await bellSection());
   if (tab === 'data') body = `<section class="card"><div class="label">Data on this phone for ${esc(s.name)}: ${(await db.all()).length} entries</div>
       <div class="row wrap"><button class="btn" data-act="export">⬇️ Backup file</button><button class="btn" data-act="csv">⬇️ Export CSV</button>
       <label class="btn">⬆️ Restore file<input type="file" id="importFile" accept="application/json" hidden></label></div>
@@ -1488,7 +1488,7 @@ async function renderSettings() {
   onSave('#remForm', async fd => {
     const on = fd.get('on') === 'on';
     if (on && 'Notification' in window && Notification.permission === 'default') { try { await Notification.requestPermission(); } catch (e) { /* ignore */ } }
-    S.settings = { ...S.settings, rem: { on, learn: fd.get('learn') === 'on', learnAt: fd.get('learnAt') || '09:00', nap: fd.get('nap') === 'on',
+    S.settings = { ...S.settings, rem: { ...remCfg(), on, learn: fd.get('learn') === 'on', learnAt: fd.get('learnAt') || '09:00', nap: fd.get('nap') === 'on',
       feedHrs: Number(fd.get('feedHrs')) || 0, meds: fd.get('meds') === 'on', vax: fd.get('vax') === 'on', custom: fd.get('custom') || '' } };
   });
   onSave('#displayForm', fd => { S.settings = { ...S.settings, theme: fd.get('theme') || 'auto' }; });
@@ -1952,7 +1952,7 @@ function chime() {
 async function notify(key, title, body, go = '') {
   if (fired[key]) return;
   markFired(key);
-  if (remCfg().on && 'Notification' in window && Notification.permission === 'granted') {
+  if (remCfg().on && !S.bellOk && 'Notification' in window && Notification.permission === 'granted') {
     const opts = { body, icon: 'icons/icon-192.png', badge: 'icons/favicon-64.png', tag: key, data: { go }, vibrate: [300, 150, 300], requireInteraction: go === 'learn' };
     try { const reg = await navigator.serviceWorker?.getRegistration(); if (reg) await reg.showNotification(title, opts); else new Notification(title, opts); } catch (e) { /* ignore */ }
   }
@@ -1970,6 +1970,8 @@ async function checkReminders() {
   if (!S.settings?.dob) return;
   const r = remCfg();
   if (!r.on) return;
+  S.bellOk = await bellConnected(); // the bell rings the phone itself; here we only chime inside the open app
+  syncBell().catch(() => {});
   const now = Date.now(), today = dateKey(), name = S.settings.name || 'Baby';
   const todayAt = hm => { const d = new Date(); d.setHours(0, hmToMin(hm), 0, 0); return d.getTime(); };
   const within = t => now >= t && now < t + 90 * 60000;
@@ -2035,9 +2037,11 @@ function remindersSection() {
       <label>One per line: time and what<textarea name="custom" rows="3" placeholder="08:00 Vitamin D drops&#10;17:30 Evening walk">${esc(r.custom || '')}</textarea></label>
       <div class="row wrap"><button class="btn primary">Save</button><button type="button" class="btn" data-act="remTest">🔔 Test alarm</button></div>
     </form>
+    <!--bell-->
     <section class="card small"><b>Good to know</b><ul>
-      <li>Reminders ring when the app is open or was used recently. Android may pause web apps that have been closed for a long time.</li>
-      <li>For a learning alarm that <b>always</b> rings, add it to Google Calendar as a daily event: <a class="btn small" href="${calendarLink(r)}" target="_blank" rel="noopener">📅 Add daily ${esc(r.learnAt)} alarm to Calendar</a></li>
+      <li>Without the bell, reminders only ring while the app is open or was used recently: Android pauses closed web apps.</li>
+      <li>Nap, feed and medicine times are sent to the bell whenever you open the app, so open it after logging (it updates by itself while open).</li>
+      <li>Backup option for learning time, a daily Google Calendar event: <a class="btn small" href="${calendarLink(r)}" target="_blank" rel="noopener">📅 Add daily ${esc(r.learnAt)} alarm to Calendar</a></li>
     </ul></section>`;
 }
 
@@ -2158,6 +2162,118 @@ async function shareText(text, title) {
   try { await navigator.clipboard.writeText(text); toast('Copied — paste it in WhatsApp'); } catch (e) { alert(text); }
 }
 
+// ------------------------------------------------------------------ BELL (alarms when the app is closed)
+// The family's own Cloudflare Worker (bell/worker.js) keeps the reminder times and wakes the
+// phone with a push message at the right minute; sw.js then shows the notification.
+const lsGet = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+const lsSet = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) { /* ignore */ } };
+const ub64 = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - s.length % 4) % 4)), c => c.charCodeAt(0));
+const b64u = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const bellUrl = () => String(remCfg().bell || '').trim().replace(/\/+$/, '');
+const bellId = () => { let id = lsGet('hp-bell-id'); if (!id) { id = uid() + uid() + uid(); lsSet('hp-bell-id', id); } return id; };
+async function bellSub() {
+  try { const reg = await navigator.serviceWorker?.getRegistration(); return reg ? await reg.pushManager.getSubscription() : null; } catch (e) { return null; }
+}
+async function bellConnected() { return !!(bellUrl() && lsGet('hp-bell-ok') === bellUrl() && await bellSub()); }
+
+async function bellJobs() {
+  const r = remCfg(), name = S.settings.name || 'Baby', now = Date.now(), jobs = [];
+  if (r.learn) jobs.push({ daily: r.learnAt, title: `📚 Learning time for ${name}`, body: "Tap to see today's book, material, rhyme and feelings activity.", go: 'learn', tag: 'learn' });
+  String(r.custom || '').split('\n').map(l => l.trim()).forEach((line, i) => {
+    const m = line.match(/^(\d{1,2})[:.](\d{2})\s*(.*)$/);
+    if (m) jobs.push({ daily: `${m[1].padStart(2, '0')}:${m[2]}`, title: `⏰ ${m[3] || 'Reminder'}`, body: name, tag: `c${i}` });
+  });
+  if (r.nap) {
+    const w = await wakeInfo();
+    if (w && w.state === 'early') jobs.push({ at: w.at + w.lo * 60000, title: `😴 ${w.what === 'nap' ? 'Nap' : 'Sleep'} time soon`, body: `${name} has been awake ${fmtDur(w.lo)}. Watch for yawns and eye-rubbing.`, tag: 'nap' });
+  }
+  if (Number(r.feedHrs) > 0 && S.months < 24) {
+    const f = [...await db.byType('breastfeed'), ...await db.byType('bottle')].sort((a, b) => b.start - a.start)[0];
+    const at = f && f.end !== null ? f.start + Number(r.feedHrs) * 3600000 : 0;
+    if (at > now) jobs.push({ at, title: '🍼 Feed due', body: `Last feed was at ${fmtTime(f.start)}${f.data?.side ? ' (' + f.data.side + ')' : ''}.`, tag: 'feed' });
+  }
+  if (r.meds) {
+    const h = await healthData(), ill = h.ill.find(i => !i.data?.recovered);
+    for (const rx of activeRx(h, ill?.id)) for (const m of rx.data?.meds || []) {
+      const last = medStatus(h, m.name), gap = FREQ_HOURS[m.freq];
+      const at = last && gap ? last.start + gap * 3600000 : 0;
+      if (at > now) jobs.push({ at, title: `💊 ${m.name} due`, body: `${m.dose || ''} · last given ${fmtTime(last.start)}`.trim(), go: 'health', tag: `med-${m.name}`.slice(0, 40) });
+    }
+  }
+  if (r.vax) {
+    const state = await db.getKV('vaccines', {}), dob = parseKey(S.settings.dob);
+    const next = UIP_VACCINES.map(v => { const d = new Date(dob); d.setDate(d.getDate() + Math.round(v.at * 30.4375)); return { ...v, d, done: state[`uip:${v.at}`] }; }).find(v => !v.done && v.d.getTime() > now);
+    if (next) { const at = new Date(next.d); at.setDate(at.getDate() - 7); at.setHours(10, 0, 0, 0);
+      if (at.getTime() > now) jobs.push({ at: at.getTime(), title: '💉 Vaccine next week', body: `${next.label}: ${next.name}. Free at government hospitals.`, tag: 'vax' }); }
+  }
+  return jobs;
+}
+// Send the reminder list to the bell when it changes (checked every 30 s while the app is open).
+async function syncBell(force = false) {
+  if (!remCfg().on || !bellUrl() || lsGet('hp-bell-ok') !== bellUrl()) return;
+  const sub = await bellSub();
+  if (!sub) return;
+  const payload = JSON.stringify({ id: bellId(), sub: { endpoint: sub.endpoint }, jobs: await bellJobs(), tz: new Date().getTimezoneOffset(), name: S.settings.me || '' });
+  const last = lsGet('hp-bell-last') || '';
+  if (!force && last === payload && Date.now() - Number(lsGet('hp-bell-at') || 0) < 12 * 3600000) return;
+  try {
+    const res = await fetch(`${bellUrl()}/save`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: payload });
+    if (res.ok) { lsSet('hp-bell-last', payload); lsSet('hp-bell-at', String(Date.now())); }
+  } catch (e) { /* offline: try again later */ }
+}
+async function connectBell() {
+  const url = ($('#bellUrl')?.value || '').trim().replace(/\/+$/, '');
+  if (!/^https:\/\/\S+$/.test(url)) return alert('Paste the bell address. It starts with https:// and ends with workers.dev');
+  if (!('PushManager' in window) || !navigator.serviceWorker) return alert('This browser cannot receive alarms. Open the app from its home-screen icon in Chrome.');
+  if (Notification.permission !== 'granted' && (await Notification.requestPermission()) !== 'granted') return alert('Please allow notifications for Happy Parenthood (Chrome → ⋮ → Settings → Notifications), then try again.');
+  try {
+    const res = await fetch(`${url}/vapid`);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.key) throw new Error(data.error || 'The bell did not answer. Check the address and the setup steps.');
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (sub && sub.options?.applicationServerKey && b64u(sub.options.applicationServerKey) !== data.key) { await sub.unsubscribe(); sub = null; }
+    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: ub64(data.key) });
+    S.settings = { ...S.settings, rem: { ...remCfg(), on: true, bell: url } };
+    await db.setKV('settings', S.settings);
+    lsSet('hp-bell-ok', url);
+    const c = await caches.open('hp-bell');
+    await c.put('bell-config', new Response(JSON.stringify({ url, id: bellId() }), { headers: { 'Content-Type': 'application/json' } }));
+    await syncBell(true);
+    toast('🔔 This phone is connected to the bell');
+    route();
+  } catch (e) { alert(`Could not connect: ${e.message}`); }
+}
+async function testBell() {
+  try {
+    await syncBell(true);
+    const res = await fetch(`${bellUrl()}/test`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: bellId() }) });
+    const d = await res.json().catch(() => ({}));
+    toast(res.ok && d.ok ? '🔔 Sent! Lock the phone — the alarm arrives in a few seconds' : `Bell problem: ${d.error || 'status ' + (d.status || res.status)}`);
+  } catch (e) { toast('Could not reach the bell. Are you online?'); }
+}
+async function bellSection() {
+  const on = await bellConnected(), url = bellUrl();
+  return `<section class="card bell-card"><div class="label">🔔 Alarms when the app is closed</div>
+    <p class="small">${on ? '✅ <b>This phone is connected.</b> Reminders ring at the right time even when the app is closed.' : url ? '⚠️ The bell is set up but <b>this phone is not connected yet</b>. Tap Connect.' : 'Set up your free bell once (about 10 minutes), then connect each phone.'}</p>
+    <label>Bell address<input id="bellUrl" inputmode="url" autocomplete="off" placeholder="https://hp-bell.yourname.workers.dev" value="${esc(url)}"></label>
+    <div class="row wrap"><button type="button" class="btn ${on ? '' : 'primary'}" data-act="bellConnect">${on ? '🔄 Reconnect' : '🔗 Connect this phone'}</button>${on ? '<button type="button" class="btn primary" data-act="bellTest">🔔 Send test alarm</button>' : ''}</div>
+    <details class="small bell-steps" ${url ? '' : 'open'}><summary><b>How to set up the free bell (one time)</b></summary>
+      <p class="muted">Easiest on a computer. You need a free Cloudflare account. Only reminder times and their short texts are stored there: no logs, photos or health records.</p>
+      <ol>
+        <li>Go to <b>dash.cloudflare.com</b> and sign up (free plan).</li>
+        <li>In the left menu open <b>Storage &amp; Databases → KV</b>, tap <b>Create</b>, name it <code>bell</code>.</li>
+        <li>Open <b>Workers &amp; Pages → Create → Worker</b> (start from "Hello World"), name it <code>hp-bell</code>, tap <b>Deploy</b>.</li>
+        <li>Tap <b>Edit code</b>, delete everything, paste the bell code (button below), tap <b>Deploy</b>.</li>
+        <li>Go back to the worker → <b>Settings → Bindings → Add → KV namespace</b>. Variable name <code>BELL</code>, namespace <code>bell</code>. Save.</li>
+        <li><b>Settings → Trigger events (Cron) → Add</b>: choose "every minute" (<code>* * * * *</code>). Save.</li>
+        <li>Copy the worker address shown at the top (ends with <code>.workers.dev</code>), paste it above and tap <b>Connect this phone</b>.</li>
+        <li>On Appa's phone: open the app → this screen → <b>Connect this phone</b> (the address is already filled in).</li>
+      </ol>
+      <div class="row wrap"><button type="button" class="btn" data-act="bellCopy">📋 Copy bell code</button><a class="btn" href="bell/worker.js" target="_blank" rel="noopener">👀 View code</a></div>
+    </details></section>`;
+}
+
 // ------------------------------------------------------------------ events
 let busy = false;
 async function onClick(ev) {
@@ -2236,6 +2352,13 @@ async function handleClick(el, a, ev) {
       break;
     }
     case 'print': window.print(); break;
+    case 'bellConnect': await connectBell(); break;
+    case 'bellTest': await testBell(); break;
+    case 'bellCopy': {
+      try { const code = await (await fetch('bell/worker.js', { cache: 'no-store' })).text(); await navigator.clipboard.writeText(code); toast('📋 Bell code copied — paste it in Cloudflare'); }
+      catch (e) { toast('Could not copy here. Tap "View code", select all and copy.'); }
+      break;
+    }
     case 'shareDoc': shareText(main().querySelector('.doc-sheet').innerText.replace(/\n{3,}/g, '\n\n'), 'Doctor visit summary'); break;
     case 'shareWeek': shareText(main().innerText.replace(/Share with family|‹ More/g, '').replace(/\n{3,}/g, '\n\n').trim(), `${S.settings.name}'s week`); break;
     case 'openWeek': await db.setKV('weekSeen', el.dataset.wk); S.view = 'week'; route(); break;
