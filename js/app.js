@@ -339,14 +339,14 @@ async function renderHome() {
   main().innerHTML = `
     ${banner}
     ${await installNudge()}
-    <button class="voice-cta" data-act="voice"><span class="mic-dot">🎤</span><span><b>Tell me what happened</b><br><small>“Ate 4 spoons of ragi at 8 and napped for an hour”</small></span></button>
+    <button class="rcard c-feel voice-row" data-act="voice"><span class="ib">🎤</span><span class="rtext"><b>Tell me what happened</b><small>“Ate 4 spoons of ragi at 8 and napped for an hour”</small></span><span class="chev" aria-hidden="true">›</span></button>
     ${await weekBanner()}
     ${await lastFeedStrip()}
     ${await wakeStrip()}
     ${(await learningCard()) || todayStrip()}
     <div class="cats" role="tablist" aria-label="Categories">
-      ${cats.map(c => { const n = running.filter(e => (CAT[e.type] || 'feel') === c.k).length; return `<button class="cat c-${c.k}" role="tab" data-act="homeCat" data-cat="${c.k}" aria-selected="${c.k === S.homeCat}">${c.icon} ${c.label}${n ? ' <i class="dot" aria-label="timer running"></i>' : ''}</button>`; }).join('')}
-      <button class="cat all" data-act="openPicker">＋ All</button>
+      ${cats.map(c => { const n = running.filter(e => (CAT[e.type] || 'feel') === c.k).length; return `<button class="cat c-${c.k}" role="tab" data-act="homeCat" data-cat="${c.k}" aria-selected="${c.k === S.homeCat}"><span class="ci">${c.icon}</span><span class="cl">${c.label}</span>${n ? '<i class="dot" aria-label="timer running"></i>' : ''}</button>`; }).join('')}
+      <button class="cat all" data-act="openPicker"><span class="ci">＋</span><span class="cl">All</span></button>
     </div>
     <section class="big2">${btns.map(q => quickBtn(q, running, sm)).join('')}</section>
     ${otherRunning.map(e => `<div class="run-pill c-${CAT[e.type] || 'feel'}"><span>${typeInfo(e.type).icon} <b>${esc(typeInfo(e.type).label)}</b> <span data-since="${e.start}">${fmtDur(entryMinutes(e))}</span></span>
@@ -1818,10 +1818,10 @@ async function lastFeedStrip() {
   const f = feeds[0], m = meals[0];
   if (!f && !m) return '';
   const feedTxt = !f ? '' : !f.end && f.type === 'breastfeed'
-    ? `<span class="lf"><b>🤱 Feeding now</b> ${esc(f.data?.side || '')} · <span data-since="${f.start}">${fmtDur(entryMinutes(f))}</span></span>`
-    : `<span class="lf">${f.type === 'bottle' ? '🍼' : '🤱'} Last feed <b data-ago="${f.start}">${esc(agoText(f.start))}</b> <small>${fmtTime(f.start)}${f.data?.side ? ' · ' + esc(f.data.side) : ''}${f.data?.amount ? ' · ' + esc(f.data.amount) + ' ml' : ''}</small></span>`;
-  const mealTxt = m ? `<span class="lf">🥣 Last meal <b data-ago="${m.start}">${esc(agoText(m.start))}</b></span>` : '';
-  return `<section class="last-feed" aria-live="polite">${feedTxt}${mealTxt}</section>`;
+    ? `<span class="rline"><b>Feeding now</b> · ${esc(f.data?.side || '')} · <b data-since="${f.start}">${fmtDur(entryMinutes(f))}</b></span>`
+    : `<span class="rline">Last feed <b data-ago="${f.start}">${esc(agoText(f.start))}</b> <small>${fmtTime(f.start)}${f.data?.side ? ' · ' + esc(f.data.side) : ''}${f.data?.amount ? ' · ' + esc(f.data.amount) + ' ml' : ''}</small></span>`;
+  const mealTxt = m ? `<span class="rline">Last meal <b data-ago="${m.start}">${esc(agoText(m.start))}</b> <small>${fmtTime(m.start)}</small></span>` : '';
+  return `<section class="rcard c-food" aria-live="polite"><span class="ib">${f?.type === 'bottle' ? '🍼' : f ? '🤱' : '🥣'}</span><span class="rtext">${feedTxt}${mealTxt}</span></section>`;
 }
 
 // ------------------------------------------------------------------ WAKE WINDOW ("next nap")
@@ -1848,10 +1848,10 @@ async function wakeStrip() {
   const w = await wakeInfo();
   if (!w) return '';
   const from = fmtTime(w.at + w.lo * 60000), to = fmtTime(w.at + w.hi * 60000);
-  const msg = w.state === 'early' ? `Next ${w.what} around <b>${from}–${to}</b>`
-    : w.state === 'due' ? `<b>${w.what === 'nap' ? 'Nap' : 'Sleep'} time now</b> · watch for yawns and eye-rubbing`
-    : `<b>Past ${S.P.his} usual awake time</b> · try to settle ${S.P.him} soon`;
-  return `<section class="wake-strip ${w.state}" aria-live="polite"><span>🌤️ Awake <b data-since="${w.at}">${fmtDur(w.awake)}</b></span><span>${msg}</span></section>`;
+  const msg = w.state === 'early' ? `Next ${w.what} around ${from}–${to}`
+    : w.state === 'due' ? `${w.what === 'nap' ? 'Nap' : 'Sleep'} time now · watch for yawns and eye-rubbing`
+    : `Past ${S.P.his} usual awake time · try to settle ${S.P.him} soon`;
+  return `<section class="rcard c-sleep wake ${w.state}" aria-live="polite"><span class="ib">${w.state === 'early' ? '🌤️' : w.state === 'due' ? '😴' : '⏰'}</span><span class="rtext"><span class="rline">Awake <b data-since="${w.at}">${fmtDur(w.awake)}</b></span><small class="wmsg">${esc(msg)}</small></span></section>`;
 }
 
 // ------------------------------------------------------------------ LEARNING TIME + MORNING
@@ -1871,8 +1871,8 @@ async function learnedToday(after = 0) {
 function todayStrip() {
   const ei = todaysEi();
   return `<section class="today-strip">
-    <button class="ts c-learn" data-act="learn"><span>📚</span><b>Learning time</b><small>Today's book, material & rhyme</small></button>
-    <button class="ts c-feel" data-act="eiToday"><span>💛</span><b>Feelings activity</b><small>${esc(ei.length > 46 ? ei.slice(0, 44) + '…' : ei)}</small></button></section>`;
+    <button class="tbtn c-learn" data-act="learn"><span class="ib">📚</span><b>Learning time</b><small>Book, material & rhyme</small></button>
+    <button class="tbtn c-feel" data-act="eiToday"><span class="ib">💛</span><b>Feelings activity</b><small>Today's activity</small></button></section>`;
 }
 async function openEiToday() {
   const ei = todaysEi(), today = dateKey(), row = eiRowFor(S.months);
@@ -1892,9 +1892,8 @@ async function learningCard() {
   const start = new Date(); start.setHours(0, at, 0, 0);
   if (await learnedToday(start.getTime() - 15 * 60000)) return '';
   const p = learningPicks();
-  return `<section class="card learn-card"><div class="row between"><div><div class="label">📚 Learning time · ${esc(r.learnAt)}</div>
-    <b>${esc(p.type)}</b><br><small>📖 ${esc(p.books[0][0])}</small></div><span class="big-emoji">📚</span></div>
-    <div class="row wrap"><button class="btn primary small" data-act="learn">See today's ideas</button><button class="btn small" data-act="learnStart">⏱ Start now</button></div></section>`;
+  return `<section class="rcard c-learn learn-row"><span class="ib">📚</span><span class="rtext"><b>Learning time · ${esc(r.learnAt)}</b><small>${esc(p.type)} · “${esc(p.books[0][0])}”</small></span>
+    <span class="ractions"><button class="btn primary small" data-act="learn">Today's ideas</button><button class="btn small" data-act="learnStart">⏱ Start</button></span></section>`;
 }
 function openLearning(salt = 0) {
   const p = learningPicks(salt), ei = todaysEi(), L = learningFor(S.months);
@@ -2300,9 +2299,9 @@ async function alarmCard() {
 // ------------------------------------------------------------------ HOME: summary / pattern / this month (open only when tapped)
 function homeMoreButtons() {
   return `<section class="home-more" aria-label="More about today">
-    <button class="hm-btn" data-act="homeSheet" data-k="summary"><span>📊</span><b>Today's summary</b><small>vs the aim for ${S.P.his} age</small></button>
-    <button class="hm-btn" data-act="homeSheet" data-k="pattern"><span>🗓️</span><b>Daily pattern</b><small>how ${S.P.his} days are changing</small></button>
-    <button class="hm-btn" data-act="homeSheet" data-k="month"><span>${S.theme.emoji}</span><b>This month</b><small>milestones, new things, tips</small></button>
+    <button class="tbtn c-learn" data-act="homeSheet" data-k="summary"><span class="ib">📊</span><b>Summary</b><small>Today vs aim</small></button>
+    <button class="tbtn c-sleep" data-act="homeSheet" data-k="pattern"><span class="ib">🗓️</span><b>Pattern</b><small>Day by day</small></button>
+    <button class="tbtn c-play" data-act="homeSheet" data-k="month"><span class="ib">${S.theme.emoji}</span><b>This month</b><small>Milestones & tips</small></button>
   </section>`;
 }
 async function openHomeSheet(k) {

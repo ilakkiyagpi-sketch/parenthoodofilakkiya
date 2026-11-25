@@ -589,3 +589,49 @@ body.locked .toast { top: calc(10px + env(safe-area-inset-top)); bottom: auto; }
 .pg-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: .76rem; color: var(--text-2); margin: 4px 0 10px; }
 .pg-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
 .pattern-table td:first-child { white-space: nowrap; }
+
+/* ======================================================================
+   Home: one consistent look. Every block is either a ROW CARD (icon box
+   on the left, text on the right) or a TILE (icon box on top, text below),
+   always a white rounded icon box on a soft colour, same corners, same gaps.
+   ====================================================================== */
+.main > .rcard, .main > section, .main > .cats { margin-top: 0; margin-bottom: 10px; }
+.rcard { display: flex; align-items: center; gap: 12px; width: 100%; box-sizing: border-box; text-align: left; appearance: none; font: inherit; color: var(--text);
+  background: color-mix(in srgb, var(--tint, var(--surface)) 85%, var(--surface)); border: 1px solid color-mix(in srgb, var(--strong, var(--border)) 18%, transparent); border-radius: 18px; padding: 10px 12px; }
+button.rcard { cursor: pointer; }
+.ib { width: 40px; height: 40px; flex: none; border-radius: 12px; background: var(--surface); display: grid; place-items: center; font-size: 1.3rem; line-height: 1; box-shadow: 0 1px 4px rgba(60,40,90,.08); }
+.rtext { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; overflow-wrap: anywhere; }
+.rtext b { font-size: .92rem; }
+.rtext small, .rline small { color: var(--text-2); font-size: .76rem; font-weight: 600; }
+.rline { font-size: .9rem; }
+.chev { color: var(--muted); font-size: 1.5rem; line-height: 1; }
+.rcard.wake.due .wmsg { color: var(--low); font-weight: 800; }
+.rcard.wake.over .wmsg { color: var(--high); font-weight: 800; }
+.learn-row { flex-wrap: wrap; }
+.ractions { display: flex; gap: 6px; width: 100%; padding-left: 52px; }
+
+/* tiles: Learning / Feelings (2 across) and Summary / Pattern / This month (3 across) */
+.today-strip, .home-more { display: grid; gap: 8px; margin: 0 0 10px; }
+.today-strip { grid-template-columns: 1fr 1fr; }
+.home-more { grid-template-columns: repeat(3, 1fr); margin-top: 4px; }
+.tbtn { appearance: none; font: inherit; color: var(--text); cursor: pointer; min-width: 0;
+  background: color-mix(in srgb, var(--tint, var(--surface)) 85%, var(--surface)); border: 1px solid color-mix(in srgb, var(--strong, var(--border)) 18%, transparent);
+  border-radius: 18px; padding: 12px 8px 10px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 4px; }
+.tbtn b { font-size: .86rem; line-height: 1.15; }
+.tbtn small { color: var(--text-2); font-size: .7rem; font-weight: 600; line-height: 1.2; }
+
+/* categories: an even grid, icon + word lined up */
+.cats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.cats .cat { display: flex; align-items: center; gap: 6px; justify-content: flex-start; padding: 8px 10px; border-radius: 14px; min-width: 0; white-space: nowrap; }
+.cats .cat .ci { font-size: 1rem; width: 20px; text-align: center; flex: none; }
+.cats .cat .cl { overflow: hidden; text-overflow: ellipsis; }
+.cats .cat .dot { margin-left: auto; }
+
+/* big one-tap buttons and glance numbers use the same corners */
+.big2 { gap: 8px; margin-bottom: 10px; }
+.big2 .qb { border-radius: 18px; min-height: 108px; }
+.big2 .qi { width: 48px; height: 48px; border-radius: 14px; font-size: 1.6rem; }
+.glance { gap: 8px; margin: 0 0 10px; }
+.glance .g { border-radius: 18px; padding: 8px 4px; }
+.glance .g span { font-size: 1.15rem; line-height: 1.2; }
+.run-pill { border-radius: 18px; margin: 0 0 10px; }
